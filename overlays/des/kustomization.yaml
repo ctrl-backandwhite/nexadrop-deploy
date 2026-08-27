@@ -64,15 +64,18 @@ patches:
   # Y pide la mitad de memoria: aquí no hay tráfico real que atender.
   - target: { kind: Deployment, name: backend }
     patch: |-
+      # 200m de CPU y 1 GB no daban para arrancar: Spring Boot con Liquibase
+      # migrando necesita músculo en el arranque aunque luego no atienda a nadie.
+      # La sonda de arranque expiraba y Kubernetes mataba el contenedor en bucle.
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 512Mi
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
         value: 1Gi
       - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 2Gi
+      - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 200m
+        value: 500m
   - target: { kind: Deployment, name: frontend }
     patch: |-
       - op: add

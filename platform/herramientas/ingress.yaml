@@ -1,0 +1,110 @@
+# Las consolas de administración, accesibles por su dominio en vez de por túnel.
+#
+# Cada una lleva su capa de acceso: Argo CD y Grafana traen la suya; Prometheus y
+# Alertmanager NO tienen ninguna, así que se la pone Traefik. Publicar Prometheus
+# tal cual enseñaría las métricas internas del sistema a cualquiera que pase.
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: acceso-basico, namespace: observabilidad }
+spec:
+  basicAuth:
+    secret: prometheus-basic
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: argocd
+  namespace: argocd
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: traefik
+  tls: [{ hosts: ["argo.nx036.com"], secretName: argo-tls }]
+  rules:
+    - host: argo.nx036.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: argocd-server, port: { number: 80 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: grafana
+  namespace: observabilidad
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: traefik
+  tls: [{ hosts: ["grafana.nx036.com"], secretName: grafana-tls }]
+  rules:
+    - host: grafana.nx036.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: obs-grafana, port: { number: 80 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: prometheus
+  namespace: observabilidad
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.middlewares: observabilidad-acceso-basico@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls: [{ hosts: ["prometheus.nx036.com"], secretName: prometheus-tls }]
+  rules:
+    - host: prometheus.nx036.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: obs-prometheus, port: { number: 9090 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: alertmanager
+  namespace: observabilidad
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.middlewares: observabilidad-acceso-basico@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls: [{ hosts: ["alertas.nx036.com"], secretName: alertas-tls }]
+  rules:
+    - host: alertas.nx036.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: obs-alertmanager, port: { number: 9093 } } }
+---
+# La consola de Harbor, con proxy de Cloudflare (no expone la IP).
+#
+# El REGISTRO sigue en registry.nx036.com y sin proxy, porque las capas de imagen
+# pasan de los 100 MB que el proxy corta. Es decir: aquí se mira, y por allí se
+# empuja. Harbor anuncia registry.nx036.com como su external_url, así que las
+# instrucciones de "docker pull" que muestra la interfaz siguen siendo correctas.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: harbor-consola
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: traefik
+  tls: [{ hosts: ["harbor.nx036.com"], secretName: harbor-consola-tls }]
+  rules:
+    - host: harbor.nx036.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: harbor-host, port: { number: 8080 } } }
