@@ -1,0 +1,140 @@
+# Grafana Alloy recoge los logs y los empuja a Loki.
+#
+# Es el sustituto de Promtail, que llegó a su fin de vida en marzo de 2026. No es
+# una preferencia estética: Promtail ya no recibe parches de seguridad.
+controller:
+  type: daemonset
+  volumes:
+    extra:
+      - name: docker-sock
+        hostPath:
+          path: /var/run/docker.sock
+          type: Socket
+
+alloy:
+  # El socket de Docker es lo que permite leer también los contenedores de
+  # Compose (Postgres, OpenSearch, Redpanda, MinIO). Sin esto solo se verían los
+  # pods, y media plataforma quedaría a oscuras justo donde vive el dato.
+  mounts:
+    varlog: true
+    extra:
+      - name: docker-sock
+        mountPath: /var/run/docker.sock
+        readOnly: true
+  configMap:
+    content: |-
+      // ---------- Pods del clúster ----------
+      discovery.kubernetes "pods" {
+        role = "pod"
+      }
+
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+
+        // Solo los de este nodo: en un DaemonSet, cada instancia lee lo suyo.
+        // Sin este filtro, todas leerían todo y los logs llegarían duplicados.
+        rule {
+          source_labels = ["__meta_kubernetes_pod_node_name"]
+          regex         = sys.env("HOSTNAME_NODO")
+          action        = "keep"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "contenedor"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app"
+        }
+        rule {
+          target_label = "origen"
+          replacement  = "kubernetes"
+        }
+      }
+
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.process.limpieza.receiver]
+      }
+
+      // ---------- Contenedores de Compose (la capa con dato) ----------
+      discovery.docker "compose" {
+        host             = "unix:///var/run/docker.sock"
+        refresh_interval = "30s"
+      }
+
+      discovery.relabel "compose" {
+        targets = discovery.docker.compose.targets
+
+        rule {
+          source_labels = ["__meta_docker_container_name"]
+          regex         = "/(.*)"
+          target_label  = "contenedor"
+        }
+        // El nombre lleva el entorno dentro (nexadrop-pre-postgres), así que de
+        // ahí sale la etiqueta que separa PRE de PRO en las consultas.
+        rule {
+          source_labels = ["__meta_docker_container_name"]
+          regex         = "/nexadrop-(pre|pro)-.*"
+          target_label  = "entorno"
+        }
+        rule {
+          source_labels = ["__meta_docker_container_name"]
+          regex         = "/nexadrop-(?:pre|pro)-(.*)"
+          target_label  = "servicio"
+        }
+        rule {
+          target_label = "origen"
+          replacement  = "compose"
+        }
+      }
+
+      loki.source.docker "compose" {
+        host       = "unix:///var/run/docker.sock"
+        targets    = discovery.relabel.compose.output
+        forward_to = [loki.process.limpieza.receiver]
+        labels     = { nodo = sys.env("HOSTNAME_NODO") }
+      }
+
+      // ---------- Proceso común ----------
+      loki.process "limpieza" {
+        forward_to = [loki.write.loki.receiver]
+
+        // Las sondas de salud generan una línea por segundo y por servicio, y no
+        // dicen nada: son el 90 % del volumen y cero de la información.
+        stage.drop {
+          expression = "(GET|HEAD) /(health|actuator/health|readyz|livez|_cluster/health)"
+          drop_counter_reason = "sonda_de_salud"
+        }
+      }
+
+      loki.write "loki" {
+        endpoint {
+          url = "http://loki.observabilidad.svc.cluster.local:3100/loki/api/v1/push"
+        }
+      }
+
+  extraEnv:
+    - name: HOSTNAME_NODO
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+
+  resources:
+    requests: { cpu: 100m, memory: 128Mi }
+    limits: { memory: 512Mi }
+
+  # El socket de Docker pertenece a root y al grupo docker; Alloy corre por
+  # defecto como un usuario sin privilegios y no podría abrirlo. Es un DaemonSet
+  # de sistema en un nodo propio, igual que era Promtail.
+  securityContext:
+    runAsUser: 0
+    runAsGroup: 0

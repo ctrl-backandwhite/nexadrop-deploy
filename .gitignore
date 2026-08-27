@@ -1,0 +1,13 @@
+# Nunca en este repositorio: valores de secretos.
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.jks
+harbor.yml.local
+
+# Nada compilado ni generado: aquí solo vive el estado deseado.
+*.tgz
+kustomize

@@ -1,0 +1,7 @@
+# Producción y plataforma exigen revisión humana explícita.
+#
+# El resto del repositorio lo escribe la integración continua sin intervención: si estas dos rutas
+# no estuvieran protegidas, un fallo de la automatización podría empujar a producción sin que nadie
+# lo mirara, y el modelo de promoción se lo saltaría entero.
+/overlays/pro/  @ctrl-backandwhite
+/platform/      @ctrl-backandwhite

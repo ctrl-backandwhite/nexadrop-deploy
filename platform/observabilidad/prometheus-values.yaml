@@ -1,0 +1,86 @@
+# Prometheus, Grafana y Alertmanager.
+#
+# No se expone nada a internet todavía: todo queda en ClusterIP y se mira por
+# túnel. Cuando exista el DNS, se le pone Ingress con certificado y autenticación
+# delante — no antes.
+
+fullnameOverride: obs
+
+grafana:
+  enabled: true
+  # La contraseña se genera en el servidor y se inyecta desde un Secret: escribirla
+  # aquí la metería en el repositorio, que es exactamente lo que no puede pasar.
+  admin:
+    existingSecret: grafana-admin
+    userKey: usuario
+    passwordKey: clave
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClassName: local-path
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  # Loki entra como origen de datos ya configurado: si hay que añadirlo a mano
+  # después de cada reinstalación, acaba sin añadirse.
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      access: proxy
+      url: http://loki.observabilidad.svc.cluster.local:3100
+      isDefault: false
+      jsonData:
+        maxLines: 1000
+  grafana.ini:
+    users:
+      default_theme: dark
+    analytics:
+      reporting_enabled: false      # No se manda telemetría de uso a ningún sitio.
+      check_for_updates: false
+    security:
+      cookie_secure: true
+      cookie_samesite: strict
+
+prometheus:
+  prometheusSpec:
+    retention: 30d
+    retentionSize: 40GB             # Tope duro: la retención por tiempo sola no
+                                    # impide que un pico llene el disco.
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+    resources:
+      requests: { cpu: 300m, memory: 1Gi }
+      limits: { memory: 4Gi }
+    # Sin esto, Prometheus solo mira los ServiceMonitor que llevan la etiqueta del
+    # chart, y los de la aplicación se quedan fuera sin decir nada.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: { cpu: 50m, memory: 128Mi }
+      limits: { memory: 512Mi }
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+# k3s no expone estos componentes como en un clúster tradicional: dejarlos
+# activos genera alertas de "objetivo caído" que no significan nada y que
+# terminan enseñando a ignorar las alertas de verdad.
+kubeControllerManager: { enabled: false }
+kubeScheduler: { enabled: false }
+kubeProxy: { enabled: false }
+kubeEtcd: { enabled: false }

@@ -1,0 +1,68 @@
+# Loki en modo binario único: un solo nodo no necesita el modo distribuido, que
+# multiplica los componentes sin dar nada a cambio aquí.
+deploymentMode: SingleBinary
+
+loki:
+  auth_enabled: false          # Un solo inquilino; la autenticación la pone Grafana delante.
+  commonConfig:
+    replication_factor: 1
+  storage:
+    type: filesystem
+  schemaConfig:
+    configs:
+      - from: 2024-04-01
+        store: tsdb
+        object_store: filesystem
+        schema: v13
+        index:
+          prefix: index_
+          period: 24h
+  limits_config:
+    retention_period: 720h     # 30 días. Más allá, el disco crece sin que nadie mire esos logs.
+    # Un pod en bucle puede escupir megabytes por segundo: sin tope, se lleva por
+    # delante el disco y con él la observabilidad, justo cuando más falta hace.
+    ingestion_rate_mb: 16
+    ingestion_burst_size_mb: 32
+    max_query_series: 5000
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+  compactor:
+    working_directory: /var/loki/compactor
+    retention_enabled: true    # Sin esto, retention_period se ignora y no se borra nada.
+    delete_request_store: filesystem
+
+singleBinary:
+  replicas: 1
+  persistence:
+    enabled: true
+    size: 60Gi
+    storageClass: local-path
+  resources:
+    requests: { cpu: 200m, memory: 512Mi }
+    limits: { memory: 3Gi }
+
+# Piezas del modo distribuido: apagadas todas.
+backend: { replicas: 0 }
+read: { replicas: 0 }
+write: { replicas: 0 }
+ingester: { replicas: 0 }
+querier: { replicas: 0 }
+queryFrontend: { replicas: 0 }
+queryScheduler: { replicas: 0 }
+distributor: { replicas: 0 }
+compactor: { replicas: 0 }
+indexGateway: { replicas: 0 }
+bloomCompactor: { replicas: 0 }
+bloomGateway: { replicas: 0 }
+
+chunksCache:
+  enabled: false               # 4 GB de memcached por defecto que aquí no compensan.
+resultsCache:
+  enabled: false
+
+lokiCanary:
+  enabled: false
+test:
+  enabled: false
+gateway:
+  enabled: false               # Sin multi-inquilino, el nginx de delante sobra.

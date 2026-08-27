@@ -1,0 +1,161 @@
+# Servicios con dato de NX036, uno por entorno.
+#
+# Van en Compose sobre el host y no en Kubernetes a propósito: se despliegan tres
+# veces al año, y meterlos en un clúster de un solo nodo añade volatilidad sin dar
+# alta disponibilidad a cambio.
+#
+# NADA de esto se publica en internet. Escuchan en la interfaz interna de Docker
+# (172.17.0.1), que los pods del clúster alcanzan y desde fuera no existe. El
+# cortafuegos es la segunda barrera, no la primera.
+#
+#   docker compose --env-file /opt/nexadrop/datos/pre/.env up -d
+name: nexadrop-datos-${ENTORNO}
+
+services:
+  postgres:
+    image: postgres:18.6-alpine
+    container_name: nexadrop-${ENTORNO}-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # El checksum de páginas detecta corrupción silenciosa de disco. Solo puede
+      # activarse al crear el clúster: después exige volcar y recargar entero.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS}
+      - -c
+      - max_connections=200
+      # Registra toda consulta que pase de un segundo: es lo que permite encontrar
+      # la lenta cuando alguien dice "va lento" sin más datos.
+      - -c
+      - log_min_duration_statement=1000
+    ports:
+      - "${BIND_IP}:${PUERTO_POSTGRES}:5432"
+    volumes:
+      # En la 18+ el montaje va en el directorio padre, NO en .../data: la imagen
+      # coloca los datos en /var/lib/postgresql/18/docker para permitir
+      # "pg_upgrade --link" entre versiones mayores. Con .../data se niega a arrancar.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:8.2-alpine
+    container_name: nexadrop-${ENTORNO}-redis
+    restart: unless-stopped
+    # appendonly: sin él, un reinicio se lleva por delante las sesiones y el
+    # historial del asistente, que viven solo aquí.
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --maxmemory
+      - ${REDIS_MAXMEMORY}
+      - --maxmemory-policy
+      - allkeys-lru
+    ports:
+      - "${BIND_IP}:${PUERTO_REDIS}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  opensearch:
+    image: opensearchproject/opensearch:2.19.3
+    container_name: nexadrop-${ENTORNO}-opensearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      # La seguridad del complemento queda desactivada porque el puerto no sale
+      # del host: el aislamiento lo da la red, no una contraseña que habría que
+      # rotar. Si algún día se expone, esto tiene que cambiar ANTES.
+      - plugins.security.disabled=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms${OPENSEARCH_HEAP} -Xmx${OPENSEARCH_HEAP}"
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile: { soft: 65536, hard: 65536 }
+    ports:
+      - "${BIND_IP}:${PUERTO_OPENSEARCH}:9200"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health | grep -qE '\"status\":\"(green|yellow)\"'"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 90s
+
+  redpanda:
+    image: redpandadata/redpanda:v25.2.5
+    container_name: nexadrop-${ENTORNO}-redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=internal://0.0.0.0:9092
+      # Lo que se anuncia es la IP por la que los clientes van a volver a llamar.
+      # Si aquí pusiera "localhost", el pod se conectaría a sí mismo y fallaría
+      # con un error de red que no menciona a Kafka por ningún lado.
+      - --advertise-kafka-addr=internal://${BIND_IP}:${PUERTO_KAFKA}
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=127.0.0.1:33145
+      # Sin --mode: el único modo con nombre es "dev-container", que desactiva el
+      # fsync y se llevaría por delante los mensajes no escritos en una caída.
+      # Producción es el comportamiento por defecto.
+      - --smp=${REDPANDA_CPUS}
+      - --memory=${REDPANDA_MEMORIA}
+      - --default-log-level=warn
+    ports:
+      - "${BIND_IP}:${PUERTO_KAFKA}:9092"
+    volumes:
+      - redpanda-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: nexadrop-${ENTORNO}-minio
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "${BIND_IP}:${PUERTO_MINIO}:9000"
+      - "${BIND_IP}:${PUERTO_MINIO_CONSOLA}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  postgres-data:
+  redis-data:
+  opensearch-data:
+  redpanda-data:
+  minio-data:
