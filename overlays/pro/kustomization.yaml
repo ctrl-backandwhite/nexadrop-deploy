@@ -1,14 +1,58 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+
 namespace: nexadrop-pro
+resources:
+  - ../../base
 
-# Producción. Este fichero NO lo escribe la integración continua: el tag se copia aquí desde
-# overlays/pre por pull request, una vez validado. Reconstruir para producción rompería la garantía
-# de que se despliega exactamente lo que se probó.
-resources: []
-
+# Aquí NO escribe el CI. Este fichero solo cambia por pull request con revisión
+# humana, que es lo que exige el CODEOWNERS: promocionar a producción es una
+# decisión, no un efecto secundario de fusionar a la rama principal.
 images:
   - name: registry.nx036.com/nexadrop/backend
-    newTag: sha-000000
+    newTag: sha-por-definir
   - name: registry.nx036.com/nexadrop/frontend
-    newTag: sha-000000
+    newTag: sha-por-definir
+
+configMapGenerator:
+  - name: backend-config
+    literals:
+      - DB_HOST=172.17.0.1
+      - DB_PORT=5442
+      - REDIS_HOST=172.17.0.1
+      - REDIS_PORT=6389
+      - KAFKA_BOOTSTRAP=172.17.0.1:9102
+      - OPENSEARCH_URIS=http://172.17.0.1:9210
+      - MINIO_ENDPOINT=http://172.17.0.1:9010
+      - SPRING_PROFILES_ACTIVE=pro
+      - STOREFRONT_BASE_URL=https://nx036.com
+
+patches:
+  - target: { kind: Ingress, name: frontend }
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: nx036.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: nx036.com
+  - target: { kind: Ingress, name: backend }
+    patch: |-
+      - op: replace
+        path: /spec/rules/0/host
+        value: api.nx036.com
+      - op: replace
+        path: /spec/tls/0/hosts/0
+        value: api.nx036.com
+  # Dos réplicas en producción: con una, cada entrega es un corte de servicio y
+  # cualquier caída del pod deja la tienda apagada hasta que Kubernetes reaccione.
+  - target: { kind: Deployment, name: backend }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+  - target: { kind: Deployment, name: frontend }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2

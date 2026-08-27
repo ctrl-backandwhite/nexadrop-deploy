@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    # Solo se atiende lo que venga de Cloudflare: por la IP directa no se entra.
+    traefik.ingress.kubernetes.io/router.middlewares: default-solo-cloudflare@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: ["por-definir"]
+      secretName: backend-tls
+  rules:
+    - host: por-definir
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port: { name: http }

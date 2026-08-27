@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nexadrop-pro
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ctrl-backandwhite/nexadrop-deploy.git
+    targetRevision: main
+    path: overlays/pro
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nexadrop-pro
+  syncPolicy:
+    automated:
+      # prune DESACTIVADO en producción a propósito. La puerta de entrada aquí es
+      # la revisión del pull request, pero un error de escritura en el repositorio
+      # no puede además borrar recursos vivos de la tienda: eso se hace a mano y
+      # mirando.
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 20s, factor: 2, maxDuration: 5m }

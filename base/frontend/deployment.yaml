@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  labels: { app.kubernetes.io/name: frontend }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: frontend }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: frontend }
+    spec:
+      imagePullSecrets:
+        - name: harbor
+      containers:
+        - name: frontend
+          image: registry.nx036.com/nexadrop/frontend:sha-por-definir
+          ports:
+            - { name: http, containerPort: 3003 }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 20
+          resources:
+            # Son ficheros estáticos servidos por nginx: pedir más es reservar
+            # memoria que nadie usa y que le quita sitio a Postgres.
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101            # el usuario nginx de la imagen alpine
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            # nginx escribe aquí aunque solo sirva estáticos; con la raíz en solo
+            # lectura y sin estos volúmenes, no llega ni a arrancar.
+            - { name: cache, mountPath: /var/cache/nginx }
+            - { name: run, mountPath: /var/run }
+            - { name: temporal, mountPath: /tmp }
+      volumes:
+        - { name: cache, emptyDir: {} }
+        - { name: run, emptyDir: {} }
+        - { name: temporal, emptyDir: {} }

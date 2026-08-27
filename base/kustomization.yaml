@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# La base no sabe en qué entorno vive: no lleva namespace, ni tag de imagen, ni
+# nombre de dominio. Eso lo pone cada overlay, y es lo único que los diferencia.
+resources:
+  - backend/deployment.yaml
+  - backend/service.yaml
+  - backend/ingress.yaml
+  - backend/servicemonitor.yaml
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+  - frontend/ingress.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: nexadrop

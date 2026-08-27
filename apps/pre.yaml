@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nexadrop-pre
+  namespace: argocd
+  finalizers:
+    # Sin esto, borrar la Application deja los recursos huérfanos en el clúster.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ctrl-backandwhite/nexadrop-deploy.git
+    targetRevision: main
+    path: overlays/pre
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nexadrop-pre
+  syncPolicy:
+    automated:
+      prune: true          # Lo que se quita del repositorio se quita del clúster.
+      selfHeal: true       # Y lo que alguien toque a mano, se revierte solo.
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff: { duration: 20s, factor: 2, maxDuration: 5m }
