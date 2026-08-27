@@ -22,6 +22,10 @@ configMapGenerator:
       - OPENSEARCH_URIS=http://172.17.0.1:9220
       - MINIO_ENDPOINT=http://172.17.0.1:9020
       - SPRING_PROFILES_ACTIVE=des
+      # 50 usuarios no necesitan más: un pool grande aquí solo reservaría
+      # conexiones en un Postgres que acepta 100.
+      - DB_POOL_MAX=10
+      - DB_POOL_MIN=2
       - STOREFRONT_BASE_URL=https://dev.nx036.com
 
 patches:

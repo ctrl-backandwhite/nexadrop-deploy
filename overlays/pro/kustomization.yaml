@@ -26,6 +26,12 @@ configMapGenerator:
       - OPENSEARCH_URIS=http://172.17.0.1:9210
       - MINIO_ENDPOINT=http://172.17.0.1:9010
       - SPRING_PROFILES_ACTIVE=pro
+      # 30 por réplica y no las 50 de fábrica: con el escalado a 10 réplicas
+      # serían 500 conexiones contra un Postgres que acepta 500, y se agotarían
+      # justo en el pico. Además, Postgres no rinde más por tener más conexiones
+      # abiertas: con 18 núcleos, el punto dulce está en torno a 150 activas.
+      - DB_POOL_MAX=30
+      - DB_POOL_MIN=10
       - STOREFRONT_BASE_URL=https://nx036.com
 
 patches:
@@ -47,16 +53,33 @@ patches:
         value: api.nx036.com
   # Dos réplicas en producción: con una, cada entrega es un corte de servicio y
   # cualquier caída del pod deja la tienda apagada hasta que Kubernetes reaccione.
+  # Dimensionado para 100.000 usuarios concurrentes. Cada réplica reserva 3 GB
+  # —memoria garantizada que ningún otro entorno puede tocar— y puede llegar a 6.
   - target: { kind: Deployment, name: backend }
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 2
+        value: 4
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 3Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 6Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 1000m
   - target: { kind: Deployment, name: frontend }
     patch: |-
       - op: replace
         path: /spec/replicas
         value: 2
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 256Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 512Mi
 
   # Producción se desaloja la última si la máquina se queda sin memoria.
   - target: { kind: Deployment, name: backend }

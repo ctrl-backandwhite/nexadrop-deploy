@@ -28,9 +28,11 @@ services:
       - -c
       - shared_buffers=${PG_SHARED_BUFFERS}
       - -c
-      - max_connections=200
+      - max_connections=${PG_MAX_CONNECTIONS}
       # Registra toda consulta que pase de un segundo: es lo que permite encontrar
       # la lenta cuando alguien dice "va lento" sin más datos.
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE}
       - -c
       - log_min_duration_statement=1000
     ports:
@@ -121,6 +123,15 @@ services:
       # Producción es el comportamiento por defecto.
       - --smp=${REDPANDA_CPUS}
       - --memory=${REDPANDA_MEMORIA}
+      # Redpanda comparte máquina con el clúster y con otros dos entornos, así
+      # que no puede comportarse como si fuera el dueño. Los dos flags hacen
+      # falta: --overprovisioned solo no basta.
+      #
+      # Medido el 27-ago-2026 SIN tráfico ninguno: 523 % de CPU entre los tres
+      # entornos, más de cinco núcleos de dieciocho. Con idle-poll-time-us=0 el
+      # hilo se duerme en vez de sondear en vacío.
+      - --overprovisioned
+      - --idle-poll-time-us=0
       - --default-log-level=warn
     ports:
       - "${BIND_IP}:${PUERTO_KAFKA}:9092"

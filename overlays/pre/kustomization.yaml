@@ -26,6 +26,8 @@ configMapGenerator:
       - OPENSEARCH_URIS=http://172.17.0.1:9200
       - MINIO_ENDPOINT=http://172.17.0.1:9000
       - SPRING_PROFILES_ACTIVE=pre
+      - DB_POOL_MAX=30
+      - DB_POOL_MIN=5
       - STOREFRONT_BASE_URL=https://pre.nx036.com
 
 patches:
@@ -57,3 +59,30 @@ patches:
       - op: add
         path: /spec/template/spec/priorityClassName
         value: nx036-preproduccion
+
+  # Dimensionado para 50.000 concurrentes: la mitad que producción. Reserva menos
+  # de lo que puede usar, a propósito. Preproducción no tiene tráfico real salvo
+  # cuando se le lanza una prueba de carga; reservarle memoria las 24 horas se la
+  # quitaría a producción, que sí la necesita siempre.
+  - target: { kind: Deployment, name: backend }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 2Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 5Gi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 500m
+  - target: { kind: Deployment, name: frontend }
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 512Mi
