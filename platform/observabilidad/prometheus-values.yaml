@@ -16,7 +16,7 @@ grafana:
     passwordKey: clave
   persistence:
     enabled: true
-    size: 10Gi
+    size: 5Gi
     storageClassName: local-path
   resources:
     requests: { cpu: 100m, memory: 256Mi }
@@ -43,8 +43,8 @@ grafana:
 
 prometheus:
   prometheusSpec:
-    retention: 30d
-    retentionSize: 40GB             # Tope duro: la retención por tiempo sola no
+    retention: 15d
+    retentionSize: 15GB             # Tope duro: la retención por tiempo sola no
                                     # impide que un pico llene el disco.
     storageSpec:
       volumeClaimTemplate:
@@ -53,7 +53,7 @@ prometheus:
           accessModes: ["ReadWriteOnce"]
           resources:
             requests:
-              storage: 50Gi
+              storage: 20Gi
     resources:
       requests: { cpu: 300m, memory: 1Gi }
       limits: { memory: 4Gi }

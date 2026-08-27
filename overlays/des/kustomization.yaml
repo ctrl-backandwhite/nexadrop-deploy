@@ -21,6 +21,15 @@ configMapGenerator:
       - KAFKA_BOOTSTRAP=172.17.0.1:9112
       - OPENSEARCH_URIS=http://172.17.0.1:9220
       - MINIO_ENDPOINT=http://172.17.0.1:9020
+      # El backend sube las imágenes por la red interna...
+      - STORAGE_ENDPOINT=http://172.17.0.1:9020
+      # ...pero al navegador le da esta otra dirección, que va por Cloudflare.
+      # Es la diferencia entre que cada foto viaje desde el VPS a cada visitante,
+      # o que MinIO la sirva UNA vez y el borde la reparta desde el país del
+      # comprador. Con 200 GB de catálogo, no es un matiz.
+      - STORAGE_PUBLIC_URL=https://img-dev.nx036.com/product-images
+      - STORAGE_BUCKET=product-images
+      - STORAGE_ACCESS_KEY=nexadrop
       - SPRING_PROFILES_ACTIVE=des
       # 50 usuarios no necesitan más: un pool grande aquí solo reservaría
       # conexiones en un Postgres que acepta 100.

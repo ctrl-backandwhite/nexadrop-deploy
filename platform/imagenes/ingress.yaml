@@ -1,0 +1,125 @@
+# Las imágenes de producto, servidas por CDN.
+#
+# MinIO vive en Compose sobre el host, así que el clúster necesita verlo como un
+# servicio más: Service sin selector y EndpointSlice escrito a mano, igual que
+# Harbor. Traefik le pone el certificado y Cloudflare cachea el resultado.
+#
+# Sin esto, cada foto de cada producto viaja desde el VPS a cada visitante, una y
+# otra vez. Con esto, MinIO sirve cada imagen una vez y el borde reparte el resto
+# desde el país del comprador.
+---
+apiVersion: v1
+kind: Service
+metadata: { name: minio-pro, namespace: default }
+spec:
+  ports: [{ name: http, port: 9010, targetPort: 9010 }]
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: minio-pro
+  namespace: default
+  labels: { kubernetes.io/service-name: minio-pro }
+addressType: IPv4
+ports: [{ name: http, port: 9010 }]
+endpoints: [{ addresses: ["172.17.0.1"] }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: minio-pre, namespace: default }
+spec:
+  ports: [{ name: http, port: 9000, targetPort: 9000 }]
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: minio-pre
+  namespace: default
+  labels: { kubernetes.io/service-name: minio-pre }
+addressType: IPv4
+ports: [{ name: http, port: 9000 }]
+endpoints: [{ addresses: ["172.17.0.1"] }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: minio-des, namespace: default }
+spec:
+  ports: [{ name: http, port: 9020, targetPort: 9020 }]
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: minio-des
+  namespace: default
+  labels: { kubernetes.io/service-name: minio-des }
+addressType: IPv4
+ports: [{ name: http, port: 9020 }]
+endpoints: [{ addresses: ["172.17.0.1"] }]
+---
+# Un año de caché. Las imágenes de producto no cambian: cuando cambian, cambia
+# el nombre del fichero. Sin esta cabecera, Cloudflare no cachea nada por su
+# cuenta y el CDN no sirve de nada.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: cache-imagenes, namespace: default }
+spec:
+  headers:
+    customResponseHeaders:
+      Cache-Control: "public, max-age=31536000, immutable"
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: imagenes-pro
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.middlewares: default-cache-imagenes@kubernetescrd,default-solo-cloudflare@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls: [{ hosts: ["img.nx036.com"], secretName: img-tls }]
+  rules:
+    - host: img.nx036.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: minio-pro, port: { number: 9010 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: imagenes-pre
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.middlewares: default-cache-imagenes@kubernetescrd,default-solo-cloudflare@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls: [{ hosts: ["img-pre.nx036.com"], secretName: img-pre-tls }]
+  rules:
+    - host: img-pre.nx036.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: minio-pre, port: { number: 9000 } } }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: imagenes-des
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.middlewares: default-cache-imagenes@kubernetescrd,default-solo-cloudflare@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls: [{ hosts: ["img-dev.nx036.com"], secretName: img-des-tls }]
+  rules:
+    - host: img-dev.nx036.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: minio-des, port: { number: 9020 } } }
