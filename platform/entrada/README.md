@@ -60,3 +60,32 @@ bajar una imagen que está en la misma máquina: más lento, y la aplicación
 dependería de que internet funcione para poder arrancar.
 
 Medido: 1,28 s para bajar una imagen del registro propio.
+
+## PENDIENTE Y SERIO: el origen es alcanzable saltándose Cloudflare
+
+**Comprobado el 27-ago-2026.** Con `--resolve` a la IP del VPS y la cabecera
+`Host`, el origen responde 200. Cualquiera que averigüe la IP —y se averigua:
+el certificado de `registry.nx036.com` la publica en los registros de
+transparencia— puede:
+
+- **Inventarse `CF-IPCountry` y comprar con el precio de otro país.** Es el
+  riesgo grave: el margen se calcula con esa cabecera.
+- Saltarse el límite de peticiones y el bloqueo de enlazado ajeno.
+- Saltarse el cortafuegos de aplicación de Cloudflare.
+
+**Filtrar por IP no sirve** y ya se probó: Traefik traduce la IP a la del
+comprador para poder calcular el margen, así que un `ipAllowList` sobre los
+rangos de Cloudflare rechaza a todo el mundo, aplicación móvil incluida.
+
+**Lo intentado:** exigir el certificado de cliente de Cloudflare (*Authenticated
+Origin Pulls*). El `TLSOption` y el secreto con la CA están creados y
+`origin_tls_client_auth` activado en la zona, pero al exigirlo **Cloudflare
+tampoco pasa: devuelve 520**. Se revirtió para no dejar el servicio caído.
+Queda por averiguar si es propagación, si la CA descargada no es la que esta
+zona presenta, o si Traefik necesita el secreto de otra forma.
+
+**Mientras tanto, la mitigación que menos depende de todo esto:** que el backend
+NO se fíe de `CF-IPCountry` sin más. Si la petición no trae certificado de
+Cloudflare ni viene de sus rangos, esa cabecera hay que descartarla y resolver el
+país por otra vía. Es donde está el dinero, y se arregla en el código en lugar de
+en la red.
