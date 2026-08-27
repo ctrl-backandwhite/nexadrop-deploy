@@ -108,3 +108,114 @@ spec:
           - path: /
             pathType: Prefix
             backend: { service: { name: harbor-host, port: { number: 8080 } } }
+---
+# Consola de MinIO de pro. Trae su propio acceso (usuario y contraseña de raíz),
+# así que no necesita la capa de Traefik. El puerto 9011 es SOLO la consola: el
+# almacén en sí lo sirve img.nx036.com.
+apiVersion: v1
+kind: Service
+metadata: { name: minio-consola-pro, namespace: default }
+spec:
+  ports: [{ name: http, port: 9011, targetPort: 9011 }]
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: minio-consola-pro
+  namespace: default
+  labels: { kubernetes.io/service-name: minio-consola-pro }
+addressType: IPv4
+ports: [{ name: http, port: 9011 }]
+endpoints: [{ addresses: ["172.17.0.1"] }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minio-consola-pro
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: traefik
+  tls: [{ hosts: ["minio.nx036.com"], secretName: minio-consola-pro-tls }]
+  rules:
+    - host: minio.nx036.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: minio-consola-pro, port: { number: 9011 } } }
+---
+# Consola de MinIO de pre. Trae su propio acceso (usuario y contraseña de raíz),
+# así que no necesita la capa de Traefik. El puerto 9001 es SOLO la consola: el
+# almacén en sí lo sirve img-pre.nx036.com.
+apiVersion: v1
+kind: Service
+metadata: { name: minio-consola-pre, namespace: default }
+spec:
+  ports: [{ name: http, port: 9001, targetPort: 9001 }]
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: minio-consola-pre
+  namespace: default
+  labels: { kubernetes.io/service-name: minio-consola-pre }
+addressType: IPv4
+ports: [{ name: http, port: 9001 }]
+endpoints: [{ addresses: ["172.17.0.1"] }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minio-consola-pre
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: traefik
+  tls: [{ hosts: ["minio-pre.nx036.com"], secretName: minio-consola-pre-tls }]
+  rules:
+    - host: minio-pre.nx036.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: minio-consola-pre, port: { number: 9001 } } }
+---
+# Consola de MinIO de des. Trae su propio acceso (usuario y contraseña de raíz),
+# así que no necesita la capa de Traefik. El puerto 9021 es SOLO la consola: el
+# almacén en sí lo sirve img-dev.nx036.com.
+apiVersion: v1
+kind: Service
+metadata: { name: minio-consola-des, namespace: default }
+spec:
+  ports: [{ name: http, port: 9021, targetPort: 9021 }]
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: minio-consola-des
+  namespace: default
+  labels: { kubernetes.io/service-name: minio-consola-des }
+addressType: IPv4
+ports: [{ name: http, port: 9021 }]
+endpoints: [{ addresses: ["172.17.0.1"] }]
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minio-consola-des
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  ingressClassName: traefik
+  tls: [{ hosts: ["minio-dev.nx036.com"], secretName: minio-consola-des-tls }]
+  rules:
+    - host: minio-dev.nx036.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: minio-consola-des, port: { number: 9021 } } }

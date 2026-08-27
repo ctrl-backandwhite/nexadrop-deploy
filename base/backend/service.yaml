@@ -3,6 +3,23 @@ kind: Service
 metadata:
   name: backend
   labels: { app.kubernetes.io/name: backend }
+  annotations:
+    # Afinidad de sesión: cada visitante vuelve al MISMO pod.
+    #
+    # Hace falta porque las sesiones viven en la memoria de cada réplica, no
+    # compartidas. El acceso con Google guarda su petición de autorización en la
+    # sesión al empezar; si Google devuelve a otro pod, ese no la tiene y el
+    # login muere con "authorization_request_not_found". Con 4 réplicas fallaba
+    # tres de cada cuatro veces.
+    #
+    # Es una tirita, no la cura: si el pod cae, esa sesión se pierde igual. La
+    # solución de fondo es Spring Session sobre el Redis que ya tenemos.
+    traefik.ingress.kubernetes.io/service.sticky: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.name: "nx036_afinidad"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.secure: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.httponly: "true"
+    traefik.ingress.kubernetes.io/service.sticky.cookie.samesite: "lax"
 spec:
   selector: { app.kubernetes.io/name: backend }
   ports:
