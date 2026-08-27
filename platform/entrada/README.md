@@ -38,9 +38,19 @@ publica en los registros de transparencia, y los escáneres masivos encuentran
 cualquier IP con el 443 abierto en horas. La defensa es el blindaje del servidor,
 no el desconocimiento de su dirección.
 
-Los demás dominios (`pre`, `argo`, `grafana`) sí van tras el proxy, y su
-*middleware* `solo-cloudflare` rechaza cualquier petición que no venga de esos 22
-rangos: aunque se sepa la IP, no se les llega por la puerta de atrás.
+## El filtro por IP y la IP real no pueden convivir
+
+Se intentó que los dominios con proxy rechazaran lo que no viniera de Cloudflare,
+con un `ipAllowList` sobre sus 22 rangos. **No funciona, y el motivo importa:**
+Traefik confía en esos mismos rangos para recuperar la IP real del comprador —de
+la que depende el cálculo del margen—, así que para cuando el filtro mira, la IP
+de origen ya es la del visitante y no la de Cloudflare. Resultado: rechaza a
+todo el mundo, aplicación móvil incluida.
+
+Se comprobó el 27-ago-2026 con la tienda entera devolviendo 403. Entre saber el
+país del comprador y filtrar por IP, manda lo primero: sin país, el precio sale
+mal. Lo que protege a las consolas de administración es su autenticación, no el
+origen de la petición.
 
 ## El clúster no sale a internet para bajar sus propias imágenes
 

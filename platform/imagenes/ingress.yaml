@@ -56,16 +56,26 @@ addressType: IPv4
 ports: [{ name: http, port: 9020 }]
 endpoints: [{ addresses: ["172.17.0.1"] }]
 ---
-# Un año de caché. Las imágenes de producto no cambian: cuando cambian, cambia
-# el nombre del fichero. Sin esta cabecera, Cloudflare no cachea nada por su
-# cuenta y el CDN no sirve de nada.
+# Freno contra la descarga masiva del catálogo.
+#
+# Una ficha de producto carga entre 10 y 20 imágenes, así que alguien navegando
+# deprisa hace 100 o 200 peticiones por minuto. Un raspador hace miles. El tope
+# deja pasar al primero con holgura y corta al segundo.
+#
+# Traefik ve la IP real del visitante y no la del proxy porque confía en los
+# rangos de Cloudflare; sin eso, este límite se aplicaría a Cloudflare entera y
+# cortaría a todo el mundo a la vez.
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
-metadata: { name: cache-imagenes, namespace: default }
+metadata: { name: limite-imagenes, namespace: default }
 spec:
-  headers:
-    customResponseHeaders:
-      Cache-Control: "public, max-age=31536000, immutable"
+  rateLimit:
+    average: 300
+    burst: 600
+    period: 1m
+    sourceCriterion:
+      ipStrategy:
+        depth: 1        # la IP que Cloudflare pone en X-Forwarded-For
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -74,7 +84,7 @@ metadata:
   namespace: default
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt
-    traefik.ingress.kubernetes.io/router.middlewares: default-cache-imagenes@kubernetescrd,default-solo-cloudflare@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: default-limite-imagenes@kubernetescrd
 spec:
   ingressClassName: traefik
   tls: [{ hosts: ["img.nx036.com"], secretName: img-tls }]
@@ -93,7 +103,7 @@ metadata:
   namespace: default
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt
-    traefik.ingress.kubernetes.io/router.middlewares: default-cache-imagenes@kubernetescrd,default-solo-cloudflare@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: default-limite-imagenes@kubernetescrd
 spec:
   ingressClassName: traefik
   tls: [{ hosts: ["img-pre.nx036.com"], secretName: img-pre-tls }]
@@ -112,7 +122,7 @@ metadata:
   namespace: default
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt
-    traefik.ingress.kubernetes.io/router.middlewares: default-cache-imagenes@kubernetescrd,default-solo-cloudflare@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: default-limite-imagenes@kubernetescrd
 spec:
   ingressClassName: traefik
   tls: [{ hosts: ["img-dev.nx036.com"], secretName: img-des-tls }]

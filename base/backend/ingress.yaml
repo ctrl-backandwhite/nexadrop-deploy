@@ -4,8 +4,12 @@ metadata:
   name: backend
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt
-    # Solo se atiende lo que venga de Cloudflare: por la IP directa no se entra.
-    traefik.ingress.kubernetes.io/router.middlewares: default-solo-cloudflare@kubernetescrd
+    # NO se filtra por IP de origen aquí, y es deliberado: Traefik confía en los
+    # rangos de Cloudflare para recuperar la IP real del comprador —de la que
+    # depende el cálculo del margen—, así que un ipAllowList compararía ESA IP
+    # contra los rangos de Cloudflare y rechazaría a todo el mundo, aplicación
+    # móvil incluida. Las dos cosas no pueden convivir; se comprobó el
+    # 27-ago-2026 con la tienda entera devolviendo 403.
 spec:
   ingressClassName: traefik
   tls:
