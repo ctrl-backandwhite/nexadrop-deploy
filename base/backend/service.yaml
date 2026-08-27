@@ -7,3 +7,8 @@ spec:
   selector: { app.kubernetes.io/name: backend }
   ports:
     - { name: http, port: 80, targetPort: http }
+    # 18082 además del 80: el nginx del frontend hace de proxy a
+    # "http://backend:18082/api/", que es correcto en el Compose local. Sin este
+    # puerto aquí, esa misma llamada falla dentro del clúster y la tienda se
+    # queda sin API sin que nada lo avise.
+    - { name: directo, port: 18082, targetPort: http }
