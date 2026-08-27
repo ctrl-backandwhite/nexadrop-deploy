@@ -13,7 +13,7 @@ images:
   - name: registry.nx036.com/nexadrop/backend
     newTag: sha-por-definir
   - name: registry.nx036.com/nexadrop/frontend
-    newTag: sha-por-definir
+    newTag: sha-30ac63d17f563bd35bb3b3fbcad42f69e6daa677
 
 configMapGenerator:
   - name: backend-config
