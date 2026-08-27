@@ -41,12 +41,10 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
           volumeMounts:
-            # nginx escribe aquí aunque solo sirva estáticos; con la raíz en solo
-            # lectura y sin estos volúmenes, no llega ni a arrancar.
-            - { name: cache, mountPath: /var/cache/nginx }
-            - { name: run, mountPath: /var/run }
+            # La imagen sin privilegios deja sus temporales y su pid en /tmp, así
+            # que basta con este volumen: montar /var/cache/nginx y /var/run
+            # sobrescribiría directorios con permisos correctos por otros que el
+            # usuario 101 no podría escribir.
             - { name: temporal, mountPath: /tmp }
       volumes:
-        - { name: cache, emptyDir: {} }
-        - { name: run, emptyDir: {} }
         - { name: temporal, emptyDir: {} }
