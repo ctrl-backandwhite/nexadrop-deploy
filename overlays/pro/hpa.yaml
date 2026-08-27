@@ -1,0 +1,50 @@
+# Escalado automático SOLO en producción.
+#
+# Cuatro réplicas fijas reservarían memoria las 24 horas para atender el pico de
+# una hora. Con esto, el suelo son 2 —suficiente para que una entrega no corte el
+# servicio— y sube hasta 6 cuando de verdad hay carga.
+#
+# Ojo con lo que esto NO da: en un nodo único, más réplicas no son más
+# disponibilidad. Si la máquina cae, caen todas. Eso solo lo arregla un segundo
+# nodo.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+  behavior:
+    scaleUp:
+      # Sube rápido: el pico ya está ahí cuando se detecta.
+      stabilizationWindowSeconds: 30
+    scaleDown:
+      # Y baja despacio: si no, el vaivén de una racha de tráfico deja el sistema
+      # arrancando y matando pods sin parar.
+      stabilizationWindowSeconds: 300
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 80 }

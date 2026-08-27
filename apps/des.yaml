@@ -1,0 +1,21 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nexadrop-des
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: git@github.com:ctrl-backandwhite/nexadrop-deploy.git
+    targetRevision: main
+    path: overlays/des
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: nexadrop-des
+  syncPolicy:
+    automated: { prune: true, selfHeal: true }
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true

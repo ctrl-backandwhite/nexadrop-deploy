@@ -45,3 +45,15 @@ patches:
       - op: replace
         path: /spec/tls/0/hosts/0
         value: api-pre.nx036.com
+
+  # Preproducción cede antes que producción, pero después que desarrollo.
+  - target: { kind: Deployment, name: backend }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: nx036-preproduccion
+  - target: { kind: Deployment, name: frontend }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: nx036-preproduccion

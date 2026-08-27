@@ -4,6 +4,7 @@ kind: Kustomization
 namespace: nexadrop-pro
 resources:
   - ../../base
+  - hpa.yaml
 
 # Aquí NO escribe el CI. Este fichero solo cambia por pull request con revisión
 # humana, que es lo que exige el CODEOWNERS: promocionar a producción es una
@@ -56,3 +57,15 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 2
+
+  # Producción se desaloja la última si la máquina se queda sin memoria.
+  - target: { kind: Deployment, name: backend }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: nx036-produccion
+  - target: { kind: Deployment, name: frontend }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/priorityClassName
+        value: nx036-produccion
