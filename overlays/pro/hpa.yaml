@@ -16,8 +16,14 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: backend
-  minReplicas: 4
-  maxReplicas: 10
+  # TEMPORAL (27-ago-2026): una sola réplica mientras las sesiones no se
+  # comparten de verdad. Spring Session está en la imagen pero no actúa, y con
+  # varias réplicas el acceso con Google falla: el flujo empieza en un pod y
+  # Google devuelve a otro. Con una, la sesión vive en su memoria y funciona.
+  #
+  # Se revierte a 4-10 en cuanto las sesiones compartidas funcionen.
+  minReplicas: 1
+  maxReplicas: 1
   metrics:
     - type: Resource
       resource:
