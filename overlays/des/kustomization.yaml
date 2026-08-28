@@ -19,6 +19,12 @@ configMapGenerator:
       - REDIS_HOST=172.17.0.1
       - REDIS_PORT=6399
       - KAFKA_BOOTSTRAP=172.17.0.1:9112
+      # Conexión al bus encendida, pero sin publicar ni consumir (los valores por defecto
+      # del perfil `des`). Sirve para dos cosas: comprobar que la aplicación arranca con
+      # los beans del bus creados —el riesgo real de esta configuración— y poder probar a
+      # mano encendiendo un interruptor, sin que desarrollo mande nada a la tienda.
+      - BUS_ENABLED=true
+      - BUS_BOOTSTRAP_SERVERS=172.17.0.1:9122
       - OPENSEARCH_URIS=http://172.17.0.1:9220
       - MINIO_ENDPOINT=http://172.17.0.1:9020
       # El backend sube las imágenes por la red interna...
