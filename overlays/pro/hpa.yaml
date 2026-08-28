@@ -16,14 +16,21 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: backend
-  # TEMPORAL (27-ago-2026): una sola réplica mientras las sesiones no se
-  # comparten de verdad. Spring Session está en la imagen pero no actúa, y con
-  # varias réplicas el acceso con Google falla: el flujo empieza en un pod y
-  # Google devuelve a otro. Con una, la sesión vive en su memoria y funciona.
+  # Vuelve a 2 el 28-ago-2026. Se había bajado a 1 mientras el acceso con Google
+  # fallaba al repartirse entre pods, y así se quedó: con una sola réplica, cada
+  # entrega es un corte de servicio.
   #
-  # Se revierte a 4-10 en cuanto las sesiones compartidas funcionen.
-  minReplicas: 1
-  maxReplicas: 1
+  # Lo que lo hace seguro ahora es la AFINIDAD de sesión (cookie nx036_afinidad):
+  # cada visitante vuelve siempre al mismo pod, así que el flujo de Google empieza
+  # y termina donde debe. Comprobado el 28-ago-2026: preproducción lleva días con
+  # dos réplicas y el acceso funciona.
+  #
+  # Ojo, la afinidad es un apaño, no la solución: Spring Session está configurado
+  # para guardar en Redis pero NO actúa —la cookie que se emite sigue siendo
+  # JSESSIONID de Tomcat y no SESSION—, así que si un pod se cae, quien estuviera
+  # en él pierde la sesión. Mientras eso no se arregle, no conviene pasar de 6.
+  minReplicas: 2
+  maxReplicas: 6
   metrics:
     - type: Resource
       resource:
