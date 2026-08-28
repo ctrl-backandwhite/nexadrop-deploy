@@ -1,0 +1,47 @@
+# Bus de integración de NX036.
+#
+# Cuarta instancia de Redpanda, aparte de las tres de entorno. Aquí publica
+# preproducción el catálogo certificado, y de aquí consumen producción y el
+# repartidor de webhooks.
+#
+# Está separada a propósito: si compartiera broker con producción, un fallo de
+# integración o un cliente ruidoso afectaría a la tienda. Y ningún entorno
+# consume del Kafka interno de otro, que es el aislamiento que se quiere
+# conservar.
+name: nexadrop-bus
+
+services:
+  bus:
+    image: redpandadata/redpanda:v25.2.5
+    container_name: nexadrop-bus
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --kafka-addr=internal://0.0.0.0:9092
+      - --advertise-kafka-addr=internal://172.17.0.1:9122
+      - --rpc-addr=0.0.0.0:33145
+      - --advertise-rpc-addr=127.0.0.1:33145
+      - --smp=2
+      - --memory=2G
+      # Sin --mode: el único modo con nombre es dev-container, que desactiva el
+      # fsync. Aquí viaja el catálogo certificado; perder mensajes en una caída
+      # significaría productos que nunca llegan a producción.
+      - --overprovisioned
+      - --idle-poll-time-us=0
+      - --default-log-level=warn
+    ports:
+      # Solo en la interfaz interna de Docker: los clientes NO se conectan aquí,
+      # reciben webhooks. El bus no sale a internet.
+      - "172.17.0.1:9122:9092"
+    volumes:
+      - bus-data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -q 'Healthy:.*true'"]
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+volumes:
+  bus-data:

@@ -23,6 +23,12 @@ configMapGenerator:
       - REDIS_HOST=172.17.0.1
       - REDIS_PORT=6389
       - KAFKA_BOOTSTRAP=172.17.0.1:9102
+      # Bus de integración: un Redpanda APARTE del interno de la tienda, para que
+      # un cliente ruidoso o una integración caída no toquen el tráfico de la
+      # tienda. Cerrado a internet: solo se llega desde la red interna de Docker.
+      # Producción solo RECIBE. No publica, o lo que consume volvería al bus.
+      - BUS_ENABLED=true
+      - BUS_BOOTSTRAP_SERVERS=172.17.0.1:9122
       - OPENSEARCH_URIS=http://172.17.0.1:9210
       - MINIO_ENDPOINT=http://172.17.0.1:9010
       # El backend sube las imágenes por la red interna...
