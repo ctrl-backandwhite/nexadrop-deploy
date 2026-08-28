@@ -7,7 +7,7 @@ resources:
 
 images:
   - name: registry.nx036.com/nexadrop/backend
-    newTag: sha-1020538d56def2f1afd22eb20ea8cdfc9e0d427f
+    newTag: sha-28e503736f55b4f18a9a2d2dd963b647eb347852
   - name: registry.nx036.com/nexadrop/frontend
     newTag: sha-e5f2c59959bbca5c7b8796d77156072b3ba4afd9
 
