@@ -92,7 +92,7 @@ patches:
         value: 10Gi
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 500m
+        value: 1500m
   - target: { kind: Deployment, name: frontend }
     patch: |-
       - op: replace
