@@ -45,3 +45,19 @@ services:
 
 volumes:
   bus-data:
+
+# Los temas se crean a mano una sola vez (no hay creación automática: un nombre mal escrito
+# generaría un tema nuevo en silencio en vez de fallar). Desde el HOST, no desde dentro del
+# contenedor: el broker se anuncia en 172.17.0.1:9122 y esa dirección no se alcanza desde dentro
+# de sí mismo, así que rpk se queda esperando sin decir por qué.
+#
+#   R="docker run --rm --network host --entrypoint rpk docker.redpanda.com/redpandadata/redpanda:v25.2.5"
+#   B="--brokers 172.17.0.1:9122"
+#   $R topic create catalogo.categoria.publicada  -p 1 -r 1 -c retention.ms=2592000000 $B
+#   $R topic create catalogo.producto.certificado -p 1 -r 1 -c retention.ms=2592000000 $B
+#   $R topic create catalogo.producto.retirado    -p 1 -r 1 -c retention.ms=2592000000 $B
+#   $R topic create catalogo.descartes            -p 1 -r 1 -c retention.ms=7776000000 $B
+#
+# Los tres primeros guardan 30 días: margen de sobra para que un entorno caído se ponga al día.
+# `catalogo.descartes` guarda 90, porque ahí van los mensajes que no se pudieron aplicar y hay que
+# poder repescarlos cuando alguien se dé cuenta, que rara vez es el mismo día.
