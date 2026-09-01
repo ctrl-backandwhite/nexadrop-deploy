@@ -42,6 +42,10 @@ configMapGenerator:
       - DB_POOL_MAX=10
       - DB_POOL_MIN=2
       - STOREFRONT_BASE_URL=https://dev.nx036.com
+      # Tipos de cambio (CurrencyLayer): la nota larga está en overlays/pro. Desarrollo
+      # sincroniza solo los lunes; el resto de la semana le sirven las tasas que ya
+      # tiene guardadas. Hora UTC.
+      - "NEXADROP_CURRENCY_SYNC_CRON=0 0 5 * * MON"    # lunes, 05:00 UTC
 
 patches:
   - target: { kind: Ingress, name: frontend }

@@ -48,6 +48,17 @@ configMapGenerator:
       - DB_POOL_MAX=30
       - DB_POOL_MIN=10
       - STOREFRONT_BASE_URL=https://nx036.com
+      # Tipos de cambio (CurrencyLayer). Una sola llamada trae TODAS las divisas,
+      # así que la cadencia es puro consumo de cuota. Estaba en `0 */5 * * * *` en
+      # los TRES entornos y con la MISMA clave de API: 288 llamadas al día cada uno,
+      # 864 en total, unas 26.000 al mes contra el mismo plan. Producción sincroniza
+      # a diario; desarrollo y preproducción, solo los lunes, y a horas distintas
+      # para no lanzar tres peticiones en el mismo segundo con una clave compartida.
+      # Total: ~39 llamadas al mes.
+      # El valor vivía en el Secret `backend-secretos`, fuera de este repositorio y
+      # sin control de versiones: una expresión cron no es un secreto, y ahí nadie
+      # veía lo que estaba costando. OJO: el contenedor va en UTC.
+      - "NEXADROP_CURRENCY_SYNC_CRON=0 30 4 * * *"     # a diario, 04:30 UTC
 
 patches:
   - target: { kind: Ingress, name: frontend }
