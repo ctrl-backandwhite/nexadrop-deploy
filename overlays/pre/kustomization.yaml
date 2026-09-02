@@ -9,7 +9,7 @@ resources:
 # Argo CD despliega lo que aquí ponga. Revertir es volver atrás este valor.
 images:
   - name: registry.nx036.com/nexadrop/backend
-    newTag: sha-dc0667bf1bdc7d28bb6fbe023d2d7725a38db01d
+    newTag: sha-8ac54d9c461f2134cc0ee15f196bab469f7fb5bd
   - name: registry.nx036.com/nexadrop/frontend
     newTag: sha-01b289245ce93758a8ac97c2d1bcc82f02d5cba0
 
