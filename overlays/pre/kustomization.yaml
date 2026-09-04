@@ -88,20 +88,42 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 2
+      # Ajustado a lo medido el 4-sep-2026: reservaba 1500m de CPU y 6 GB, y
+      # consumía 330-350m y entre 1,9 y 3,7 GB. Preproducción no atiende tráfico
+      # real, así que apartar millar y medio de CPU era quitárselo a producción y
+      # al escaparate renderizado en servidor para nada.
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 6Gi
+        value: 4Gi
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: 10Gi
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 1500m
+        value: 600m
   - target: { kind: Deployment, name: frontend }
     patch: |-
       - op: replace
         path: /spec/replicas
         value: 2
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 512Mi
+  # El frontend ya no es nginx sirviendo ficheros, sino React renderizándose en el
+  # servidor. Lo que se dimensiona por entorno es la CPU y el número de réplicas;
+  # la MEMORIA se deja como está en la base (384Mi/768Mi) y es a propósito: lo que
+  # ocupa un renderizador no depende del entorno, depende de cuántas páginas pinta
+  # a la vez, y eso se resuelve con réplicas. Bajarla aquí a 512Mi, como estaba,
+  # dejaría el tope por debajo del montón que la propia imagen le pide a Node.
+  #
+  # El parche va por NOMBRE de contenedor, no por índice: el pod tiene ahora dos
+  # (el renderizador y la pasarela) y un `containers/0` acertaría de casualidad.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: frontend
+                resources:
+                  requests: { cpu: 300m }

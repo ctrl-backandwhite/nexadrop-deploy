@@ -57,7 +57,25 @@ spec:
   minReplicas: 2
   maxReplicas: 6
   metrics:
+    # Escalar por CPU es ahora la métrica CORRECTA, y antes no lo era: nginx
+    # sirviendo ficheros nunca llegaba al 80% de nada, así que este autoescalado
+    # era decorativo. Con el renderizado en servidor, la CPU sí es lo que se
+    # agota, y este es el mando que de verdad sostiene el pico.
+    #
+    # Baja del 80% al 70% por una razón aritmética, no por prudencia: el tipo
+    # `Resource` mide el pod ENTERO —suma el uso de los dos contenedores y lo
+    # divide entre la suma de sus reservas—. La pasarela reserva 25m sobre los
+    # 500m del renderizador y no gasta casi nada, así que DILUYE la medida en
+    # torno a un 10%: cuando el renderizador va al 80% de lo suyo, el pod marca
+    # ~73% y con el umbral en 80 el autoescalado todavía no habría movido ficha.
+    # Con 70 se dispara donde se pretendía.
+    #
+    # Lo exacto sería `type: ContainerResource` apuntando al contenedor
+    # `frontend`, que mide uno solo. Se deja fuera a propósito: si la versión de
+    # Kubernetes no lo admite, el HPA no da error, simplemente deja de escalar
+    # —y eso se descubre en el pico—. Merece la pena cambiarlo el día que se
+    # confirme la versión del clúster.
     - type: Resource
       resource:
         name: cpu
-        target: { type: Utilization, averageUtilization: 80 }
+        target: { type: Utilization, averageUtilization: 70 }

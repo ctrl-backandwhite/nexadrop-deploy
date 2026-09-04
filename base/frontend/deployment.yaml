@@ -25,33 +25,162 @@ spec:
     spec:
       imagePullSecrets:
         - name: harbor
+
+      # ── Por qué el pod tiene ahora DOS procesos ───────────────────────────
+      # El frontend dejó de ser HTML estático: lo pinta un proceso Node
+      # (react-router-serve). Pero el navegador sigue pidiendo `/api`, `/oauth2`…
+      # al MISMO origen que la página, así que alguien tiene que reenviar esas
+      # rutas al backend. Ese "alguien" era nginx y sigue siéndolo:
+      #
+      #   · sus reglas (600 s de plazo para reindexar, 20 MB de cuerpo para los
+      #     lotes de importación, la cabecera Host de OAuth) salieron cada una de
+      #     una avería real y están escritas en `frontend/nginx.conf`;
+      #   · y ahora protegen algo caro: el renderizador es un solo hilo, así que
+      #     cada rastreador que nginx rechaza con un 403 y cada lote de 20 MB que
+      #     va derecho al backend es CPU que queda libre para pintar páginas.
+      #
+      # nginx escucha en el 3003 —el puerto que ya conocían el Service y el
+      # Ingress, que no cambian— y reenvía a Node en el 3000 por 127.0.0.1: los
+      # dos contenedores comparten espacio de red.
+      initContainers:
+        # La configuración de nginx viaja DENTRO de la imagen del frontend, en
+        # /app/nginx.conf, y este contenedor la deja donde el sidecar la busca.
+        #
+        # Es un rodeo de tres líneas que compra una cosa concreta: UNA sola copia
+        # del fichero. La alternativa —una segunda copia aquí, en un ConfigMap—
+        # es la copia que se queda rancia cuando alguien toca la del repositorio
+        # del frontend y se olvida de esta. Además, al venir de la imagen, la
+        # configuración queda atada al MISMO SHA que la aplicación: no existe la
+        # combinación "aplicación nueva con pasarela vieja".
+        - name: copiar-config-pasarela
+          image: registry.nx036.com/nexadrop/frontend:sha-por-definir
+          command: ["cp", "/app/nginx.conf", "/configuracion/default.conf"]
+          volumeMounts:
+            - { name: config-pasarela, mountPath: /configuracion }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000           # el usuario `node` de la imagen oficial
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+
       containers:
+        # OJO AL ORDEN: el renderizador va PRIMERO a propósito. Es el contenedor
+        # que dimensionan los overlays y el que mide el autoescalado; si algún
+        # parche antiguo direcciona `containers/0`, tiene que caer aquí.
         - name: frontend
           image: registry.nx036.com/nexadrop/frontend:sha-por-definir
           ports:
-            - { name: http, containerPort: 3003 }
+            # NO se publica en el Service: al renderizador se llega por la
+            # pasarela. Se declara para que kubelet pueda sondearlo por su nombre.
+            - { name: ssr, containerPort: 3000 }
+          env:
+            # Node NO lee el límite de memoria del contenedor: dimensiona su
+            # montón a partir de la RAM de la MÁQUINA. En un nodo de 64 GB elegiría
+            # un montón de varios gigas, no recogería basura a tiempo y el pod
+            # moriría por OOMKilled contra el límite de 768Mi sin haber intentado
+            # siquiera liberar. Se le fija a mano, en torno al 70% del límite —el
+            # mismo criterio que el `MaxRAMPercentage=70` del backend—.
+            # Si se toca el límite de memoria de abajo, hay que tocar esto también.
+            - { name: NODE_OPTIONS, value: "--max-old-space-size=512" }
+          # Sondas: se separan a propósito en dos tipos.
+          #
+          # La de ARRANQUE pide `/`, que renderiza la portada entera. Es cara, y
+          # por eso solo se usa aquí: es la única que comprueba que el renderizado
+          # en servidor funciona de verdad y no que el proceso está simplemente
+          # escuchando.
+          startupProbe:
+            httpGet: { path: /, port: ssr }
+            periodSeconds: 5
+            failureThreshold: 24        # hasta 2 minutos para el primer render
+          # Las PERIÓDICAS piden un fichero estático. Pedir `/` cada diez segundos
+          # sería renderizar la portada 8.640 veces al día por cada réplica solo
+          # para preguntar si está viva; con `/robots.txt` la respuesta la da
+          # express.static sin tocar React.
           readinessProbe:
-            httpGet: { path: /, port: http }
+            httpGet: { path: /robots.txt, port: ssr }
             periodSeconds: 10
           livenessProbe:
-            httpGet: { path: /, port: http }
+            httpGet: { path: /robots.txt, port: ssr }
             periodSeconds: 20
           resources:
-            # Son ficheros estáticos servidos por nginx: pedir más es reservar
-            # memoria que nadie usa y que le quita sitio a Postgres.
-            requests: { cpu: 50m, memory: 64Mi }
-            limits: { memory: 256Mi }
+            # Ya NO son ficheros estáticos: es React renderizándose en el
+            # servidor, un proceso de un solo hilo donde cada página cuesta CPU
+            # de verdad (decenas de milisegundos) y donde el montón de V8 crece
+            # con la concurrencia. Los 50m/64Mi de la etapa nginx eran correctos
+            # entonces y aquí serían un estrangulamiento inmediato.
+            #
+            # CPU: 200m de reserva. Es el suelo con el que la portada se pinta sin
+            # esperar a que el planificador le dé turno; el pico lo absorbe el
+            # autoescalado de producción (2→6 réplicas). No se pone LÍMITE de CPU,
+            # igual que en el backend: un límite de CPU en Kubernetes no ralentiza,
+            # ESTRANGULA en tramos de 100 ms, y en un renderizador eso se traduce
+            # en páginas que tardan el doble sin que ninguna métrica lo explique.
+            #
+            # Memoria: 384Mi reservados, 768Mi de tope. El proceso arranca en unos
+            # 120 MB y el resto es margen para el montón bajo carga.
+            #
+            # La memoria es IGUAL en los tres entornos, y es deliberado: lo que
+            # ocupa un renderizador no depende del entorno, depende de cuántas
+            # páginas pinta a la vez —y eso se resuelve con réplicas, no dándole
+            # más memoria a un proceso de un solo hilo—. Los overlays solo tocan
+            # CPU y número de réplicas.
+            requests: { cpu: 200m, memory: 384Mi }
+            limits: { memory: 768Mi }
           securityContext:
             runAsNonRoot: true
-            runAsUser: 101            # el usuario nginx de la imagen alpine
+            runAsUser: 1000             # el usuario `node` de la imagen oficial
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
           volumeMounts:
-            # La imagen sin privilegios deja sus temporales y su pid en /tmp, así
-            # que basta con este volumen: montar /var/cache/nginx y /var/run
-            # sobrescribiría directorios con permisos correctos por otros que el
-            # usuario 101 no podría escribir.
-            - { name: temporal, mountPath: /tmp }
+            # Con el sistema de ficheros en solo lectura, npm necesita dónde
+            # dejar su caché y sus registros (la imagen le apunta a /tmp con
+            # npm_config_cache).
+            - { name: temporal-renderizador, mountPath: /tmp }
+
+        - name: pasarela
+          image: nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            # Este es el puerto que ve el Service. Se mantiene el 3003 de siempre
+            # para no tener que tocar ni el Service ni el Ingress.
+            - { name: http, containerPort: 3003 }
+          # La pasarela se sonda contra SÍ MISMA, no a través del renderizador:
+          # así "nginx caído" y "Node caído" son dos síntomas distintos. Y no hace
+          # falta que nginx compruebe a Node, porque el pod solo está listo cuando
+          # lo están TODOS sus contenedores: si el renderizador falla su sonda, el
+          # pod sale del balanceo igualmente.
+          readinessProbe:
+            httpGet: { path: /interno/salud-pasarela, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /interno/salud-pasarela, port: http }
+            periodSeconds: 20
+          resources:
+            # Esto sí sigue siendo lo de antes: nginx reenviando bytes. Lo único
+            # que ha crecido es que ahora también pasan por él los estáticos, y
+            # eso son búferes de socket, no memoria de aplicación.
+            requests: { cpu: 25m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 101              # el usuario nginx de la imagen alpine
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: config-pasarela, mountPath: /etc/nginx/conf.d, readOnly: true }
+            # La imagen sin privilegios deja sus temporales y su pid en /tmp —ahí
+            # va también el cuerpo de las peticiones grandes, como los lotes de
+            # importación de 20 MB—, así que basta con este volumen: montar
+            # /var/cache/nginx y /var/run sobrescribiría directorios con permisos
+            # correctos por otros que el usuario 101 no podría escribir.
+            - { name: temporal-pasarela, mountPath: /tmp }
+
       volumes:
-        - { name: temporal, emptyDir: {} }
+        - { name: config-pasarela, emptyDir: {} }
+        - { name: temporal-pasarela, emptyDir: {} }
+        - { name: temporal-renderizador, emptyDir: {} }

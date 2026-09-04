@@ -91,3 +91,23 @@ patches:
       - op: add
         path: /spec/template/spec/priorityClassName
         value: nx036-desarrollo
+  # El renderizado en servidor sí necesita CPU, pero aquí no hay tráfico que
+  # atender: se reserva lo justo para que la portada se pinte cuando alguien entra
+  # a mirar. La MEMORIA se deja como en la base y como en los otros entornos —lo
+  # que ocupa un renderizador no depende del entorno—; lo que se recorta es el
+  # turno de CPU reservado las 24 horas.
+  #
+  # El parche va por NOMBRE de contenedor, no por índice: el pod tiene ahora dos
+  # (el renderizador y la pasarela) y un `containers/0` acertaría de casualidad.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: frontend
+                resources:
+                  requests: { cpu: 100m }

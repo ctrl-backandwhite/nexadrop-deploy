@@ -79,8 +79,30 @@ patches:
         value: api.nx036.com
   # Dos réplicas en producción: con una, cada entrega es un corte de servicio y
   # cualquier caída del pod deja la tienda apagada hasta que Kubernetes reaccione.
-  # Dimensionado para 100.000 usuarios concurrentes. Cada réplica reserva 3 GB
-  # —memoria garantizada que ningún otro entorno puede tocar— y puede llegar a 6.
+  #
+  # Las reservas se AJUSTARON A LA MEDIDA el 4-sep-2026, después de mirar lo que
+  # el backend consume de verdad en este nodo:
+  #
+  #     reservaba          consumía
+  #     2500m de CPU  ->   306-311m
+  #     8 GB de RAM   ->   4,3 GB
+  #
+  # Estaban puestas «para 100.000 usuarios concurrentes», que era una previsión,
+  # no una medición. Reservar es apartar: esos 5 CPU de las dos réplicas no los
+  # podía usar nadie más, y con ellos el nodo figuraba al 53% de CPU reservada
+  # usando en realidad la tercera parte. Con el renderizado en servidor del
+  # escaparate, que sí consume CPU, ese sitio hace falta.
+  #
+  # Y había una consecuencia peor, que es la que de verdad importa: el
+  # autoescalado NO PODÍA DISPARARSE NUNCA. El HPA mide el uso como porcentaje de
+  # lo RESERVADO, así que con 2500m reservados el 70% son 1750m por réplica —cinco
+  # veces el pico observado—. El autoescalado estaba puesto, se veía en el panel y
+  # no habría movido ficha ni con la tienda saturada.
+  #
+  # 1000m es margen de sobra sobre los 311m medidos: cubre el arranque de la JVM,
+  # que es el momento de más consumo, y deja el umbral del 70% en 700m, alcanzable
+  # cuando de verdad haya carga. El LÍMITE de memoria no se toca: es el techo, y
+  # bajarlo sí podría matar el proceso.
   - target: { kind: Deployment, name: backend }
     patch: |-
       - op: replace
@@ -88,24 +110,46 @@ patches:
         value: 2
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 8Gi
+        value: 6Gi
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: 14Gi
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 2500m
+        value: 1000m
   - target: { kind: Deployment, name: frontend }
     patch: |-
       - op: replace
         path: /spec/replicas
         value: 2
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 256Mi
-      - op: replace
-        path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 512Mi
+  # El frontend dejó de ser nginx sirviendo ficheros: ahora es React renderizándose
+  # en el servidor, un proceso de un solo hilo donde cada visita cuesta CPU. Con
+  # 256Mi/512Mi y sin reserva de CPU propia, cada página quedaba a expensas de que
+  # el planificador le diera turno detrás del backend.
+  #
+  # Se reserva 500m: el doble que preproducción, porque aquí sí hay tráfico real y
+  # porque es el valor sobre el que mide el autoescalado (el HPA compara el uso
+  # contra la RESERVA, no contra el límite). Sin límite de CPU, igual que el
+  # backend: un límite de CPU no ralentiza, estrangula en tramos de 100 ms.
+  #
+  # La MEMORIA se hereda de la base (384Mi/768Mi) en los tres entornos: lo que
+  # ocupa un renderizador no depende del entorno, depende de cuántas páginas pinta
+  # a la vez, y de eso se encarga el HPA subiendo réplicas.
+  #
+  # El parche va por NOMBRE de contenedor, no por índice: el pod tiene ahora dos
+  # (el renderizador y la pasarela) y un `containers/0` acertaría de casualidad.
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: frontend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: frontend
+                resources:
+                  requests: { cpu: 500m }
 
   # Producción se desaloja la última si la máquina se queda sin memoria.
   - target: { kind: Deployment, name: backend }
