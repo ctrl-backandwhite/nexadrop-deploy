@@ -52,14 +52,25 @@ spec:
             httpGet: { path: /actuator/health/readiness, port: http }
             periodSeconds: 10
             failureThreshold: 60      # hasta 10 minutos
+            # timeoutSeconds NO estaba puesto, así que valía el defecto de Kubernetes: UN segundo.
+            # Para una aplicación que tarda entre 200 y 367 segundos en arrancar —medido el
+            # 5-sep-2026 en las dos réplicas de PRE— y que hace trabajo de fondo pesado, un segundo
+            # es un margen irreal: el 5-sep una réplica se quedó dando vueltas porque la sonda de
+            # vida la mataba antes de que terminara de arrancar.
+            #
+            # Cinco segundos no debilitan la protección: una aplicación de verdad colgada tampoco
+            # responde en cinco. Lo que se evita es matar a una que solo estaba ocupada.
+            timeoutSeconds: 5
           readinessProbe:
             httpGet: { path: /actuator/health/readiness, port: http }
             periodSeconds: 10
             failureThreshold: 3
+            timeoutSeconds: 5
           livenessProbe:
             httpGet: { path: /actuator/health/liveness, port: http }
             periodSeconds: 20
             failureThreshold: 3
+            timeoutSeconds: 5
           resources:
             requests: { cpu: 500m, memory: 1Gi }
             limits: { memory: 2Gi }
