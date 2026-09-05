@@ -28,6 +28,15 @@ configMapGenerator:
       # dos réplicas sin servir. Producción, que ya estaba en 1, no ha reiniciado
       # ni una vez. Volver a subirlo SOLO cuando el cerrojo de CompresorDeImagen
       # esté desplegado, y aun entonces midiendo.
+      # 5-sep-2026, 2a caida del dia: ESPEJADO PARADO. La JVM muere por SIGSEGV dentro del
+      # codificador WebP nativo (libwebp-imageio 0.9.0) tras unas 550 imagenes, CON UN SOLO HILO y
+      # con el cerrojo puesto — asi que no era concurrencia. Y como el intento solo se registra
+      # DESPUES de procesar, una imagen que mata el proceso se reintenta para siempre: bucle de
+      # caidas en las dos replicas.
+      #
+      # Se para aqui, y no bajando la concurrencia, porque mirror-enabled SI llega a la aplicacion
+      # (esta declarada en application.yml). Volver a activarlo cuando este el arreglo de fondo.
+      - STORAGE_MIRROR_ENABLED=false
       - STORAGE_MIRROR_CONCURRENCY=1
       - STORAGE_MIRROR_BATCH=25
       # 172.17.0.1 es la interfaz interna de Docker: donde escuchan los servicios
