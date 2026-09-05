@@ -119,13 +119,13 @@ patches:
         value: 2
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 6Gi
+        value: 8500Mi
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 14Gi
+        value: 16500Mi
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 1000m
+        value: 1600m
   - target: { kind: Deployment, name: frontend }
     patch: |-
       - op: replace

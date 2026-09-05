@@ -102,13 +102,13 @@ patches:
       # al escaparate renderizado en servidor para nada.
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 4Gi
+        value: 6500Mi
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
-        value: 10Gi
+        value: 12500Mi
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 600m
+        value: 1500m
   - target: { kind: Deployment, name: frontend }
     patch: |-
       - op: replace
