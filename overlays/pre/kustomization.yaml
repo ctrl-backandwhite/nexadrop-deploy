@@ -36,7 +36,11 @@ configMapGenerator:
       #
       # Se para aqui, y no bajando la concurrencia, porque mirror-enabled SI llega a la aplicacion
       # (esta declarada en application.yml). Volver a activarlo cuando este el arreglo de fondo.
-      - STORAGE_MIRROR_ENABLED=false
+      # Reactivado el 5-sep-2026 ya con el arreglo de fondo: el intento se anota ANTES de
+      # procesar (asi una imagen que mate el proceso deja de volver eternamente) y una imagen
+      # que ya fallo se espeja SIN comprimir. Peor caso: una foto pesa de mas, en vez de las
+      # replicas cayendo en bucle. Ademas webp-imageio pasa de 0.9.0 a 0.11.0.
+      - STORAGE_MIRROR_ENABLED=true
       - STORAGE_MIRROR_CONCURRENCY=1
       - STORAGE_MIRROR_BATCH=25
       # 172.17.0.1 es la interfaz interna de Docker: donde escuchan los servicios
