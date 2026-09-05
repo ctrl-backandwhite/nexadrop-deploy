@@ -14,6 +14,14 @@ images:
 configMapGenerator:
   - name: backend-config
     literals:
+      # Espejado de imágenes: cuántas se procesan A LA VEZ y cuántas por ronda.
+      #
+      # Descomprimir una foto ocupa ancho x alto x 4 bytes, no lo que pesa el fichero. El compresor
+      # decodifica saltando píxeles, así que cada imagen queda acotada en unos 40 MB por grande que
+      # sea el original; el pico del espejado es por tanto CONCURRENCY x 40 MB.
+      # 2Gi de límite, heap ~1,4 GB: 2 hilos son ~80 MB de pico, holgado para la máquina más pequeña.
+      - STORAGE_MIRROR_CONCURRENCY=2
+      - STORAGE_MIRROR_BATCH=10
       - DB_HOST=172.17.0.1
       - DB_PORT=5452
       - REDIS_HOST=172.17.0.1

@@ -16,6 +16,14 @@ images:
 configMapGenerator:
   - name: backend-config
     literals:
+      # Espejado de imágenes: cuántas se procesan A LA VEZ y cuántas por ronda.
+      #
+      # Descomprimir una foto ocupa ancho x alto x 4 bytes, no lo que pesa el fichero. El compresor
+      # decodifica saltando píxeles, así que cada imagen queda acotada en unos 40 MB por grande que
+      # sea el original; el pico del espejado es por tanto CONCURRENCY x 40 MB.
+      # 10Gi de límite, heap ~7 GB: 4 hilos son ~160 MB de pico, el 2% del montón.
+      - STORAGE_MIRROR_CONCURRENCY=4
+      - STORAGE_MIRROR_BATCH=25
       # 172.17.0.1 es la interfaz interna de Docker: donde escuchan los servicios
       # con dato, que viven en Compose sobre el host y no en el clúster.
       - DB_HOST=172.17.0.1
