@@ -25,8 +25,17 @@ configMapGenerator:
       # sea el original; el pico del espejado es por tanto CONCURRENCY x 40 MB.
       # 14Gi de límite, heap ~9,8 GB: 4 hilos son ~160 MB de pico. No se sube más porque el
       # cuello no es la memoria sino la descarga desde 1688, y más hilos solo añaden presión al origen.
-      - STORAGE_MIRROR_CONCURRENCY=4
-      - STORAGE_MIRROR_BATCH=25
+      # TEMPORAL mientras se comprime el histórico de imágenes (5-sep-2026). Bajado de 4 a 1 hilo.
+      #
+      # Motivo: comprimir a WebP es trabajo de CPU, y con 4 hilos por réplica y 4 réplicas eran 16 hilos
+      # codificando a la vez. El backend gastaba 5,7 núcleos, el autoescalado estaba en 4 de 6 con la CPU
+      # al 89% frente al objetivo del 70%, y los portales respondían lentos. No era el tráfico de los
+      # clientes: era el trabajo de fondo compitiendo con ellos.
+      #
+      # Con 1 hilo el histórico tarda más, pero es trabajo que a nadie le corre prisa; la respuesta al
+      # comprador sí. VOLVER A 4 cuando `pendientes` llegue a 0 en el panel de productos.
+      - STORAGE_MIRROR_CONCURRENCY=1
+      - STORAGE_MIRROR_BATCH=10
       - DB_HOST=172.17.0.1
       - DB_PORT=5442
       - REDIS_HOST=172.17.0.1
