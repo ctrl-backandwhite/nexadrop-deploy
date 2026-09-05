@@ -22,7 +22,13 @@ configMapGenerator:
       # decodifica saltando píxeles, así que cada imagen queda acotada en unos 40 MB por grande que
       # sea el original; el pico del espejado es por tanto CONCURRENCY x 40 MB.
       # 10Gi de límite, heap ~7 GB: 4 hilos son ~160 MB de pico, el 2% del montón.
-      - STORAGE_MIRROR_CONCURRENCY=4
+      # 5-sep-2026: BAJADO A 1 DE URGENCIA. El codificador WebP nativo
+      # (libwebp-imageio.so) no es seguro con varios hilos: con 4 la JVM cayó por
+      # SIGSEGV dentro de `encode` y se llevó el backend entero — PRE quedó con las
+      # dos réplicas sin servir. Producción, que ya estaba en 1, no ha reiniciado
+      # ni una vez. Volver a subirlo SOLO cuando el cerrojo de CompresorDeImagen
+      # esté desplegado, y aun entonces midiendo.
+      - STORAGE_MIRROR_CONCURRENCY=1
       - STORAGE_MIRROR_BATCH=25
       # 172.17.0.1 es la interfaz interna de Docker: donde escuchan los servicios
       # con dato, que viven en Compose sobre el host y no en el clúster.
