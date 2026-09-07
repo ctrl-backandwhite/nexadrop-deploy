@@ -19,11 +19,28 @@ repositorio: **lo que no está aquí, no existe en producción**.
 | Directorio | Contenido |
 |---|---|
 | `apps/` | Aplicaciones de Argo CD (app-of-apps): Argo se gestiona a sí mismo desde Git |
-| `base/` | Manifiestos comunes: backend, frontend, crawler |
+| `base/` | Manifiestos comunes: backend y frontend |
 | `overlays/pre/` | Preproducción. El tag candidato lo escribe el CI |
 | `overlays/pro/` | Producción. Requiere revisión de CODEOWNERS |
 | `platform/` | Traefik, cert-manager, External Secrets, monitorización |
 | `datos/` | Servicios con estado (Postgres, Redis, Redpanda, OpenSearch, MinIO, Harbor), en Compose sobre el host |
+
+## Qué se despliega
+
+| Imagen | Repositorio | Qué es |
+|---|---|---|
+| `nexadrop/backend` | `mic-dropshipping` | Spring Boot |
+| `nexadrop/frontend` | `front-nx036` | Escaparate y panel, Angular con salida ESTÁTICA: las páginas públicas se escriben al construir la imagen y las sirve nginx |
+
+El escaparate de **React (`frontend/`) ya no se despliega en ningún entorno**. Se sustituyó por
+`front-nx036` en des, pre y pro; en el clúster no queda ni una referencia a él. El repositorio sigue
+existiendo como referencia de la migración —la batería de paridad de `front-nx036` compara contra él—,
+pero no construye imagen ni tiene sitio en estos manifiestos.
+
+La diferencia que se nota en los manifiestos: aquel escaparate se pintaba en SERVIDOR, así que su pod
+llevaba dos contenedores (un proceso Node por página y un nginx delante), un initContainer para
+copiarle la configuración, memoria de V8 que dimensionar y sondas que renderizaban la portada entera.
+El de ahora es un solo nginx entregando ficheros.
 
 ## Secretos
 

@@ -57,24 +57,21 @@ spec:
   minReplicas: 2
   maxReplicas: 6
   metrics:
-    # Escalar por CPU es ahora la métrica CORRECTA, y antes no lo era: nginx
-    # sirviendo ficheros nunca llegaba al 80% de nada, así que este autoescalado
-    # era decorativo. Con el renderizado en servidor, la CPU sí es lo que se
-    # agota, y este es el mando que de verdad sostiene el pico.
+    # AVISO HONESTO: con el escaparate estático, este autoescalado casi no va a
+    # dispararse, y hay que saberlo para no confiar en él.
     #
-    # Baja del 80% al 70% por una razón aritmética, no por prudencia: el tipo
-    # `Resource` mide el pod ENTERO —suma el uso de los dos contenedores y lo
-    # divide entre la suma de sus reservas—. La pasarela reserva 25m sobre los
-    # 500m del renderizador y no gasta casi nada, así que DILUYE la medida en
-    # torno a un 10%: cuando el renderizador va al 80% de lo suyo, el pod marca
-    # ~73% y con el umbral en 80 el autoescalado todavía no habría movido ficha.
-    # Con 70 se dispara donde se pretendía.
+    # Cuando el escaparate se pintaba en servidor, la CPU era lo que se agotaba y
+    # este era el mando que sostenía el pico. Ahora nginx entrega ficheros ya
+    # comprimidos en disco: hacen falta muchísimas peticiones por segundo para
+    # llegar al 70% de 50m, así que lo que de verdad protege la tienda no es esto,
+    # es el mínimo de DOS réplicas —para que una entrega o la caída de un pod no
+    # corten el servicio— y el borde de Cloudflare, que sirve los estáticos sin
+    # llegar hasta aquí.
     #
-    # Lo exacto sería `type: ContainerResource` apuntando al contenedor
-    # `frontend`, que mide uno solo. Se deja fuera a propósito: si la versión de
-    # Kubernetes no lo admite, el HPA no da error, simplemente deja de escalar
-    # —y eso se descubre en el pico—. Merece la pena cambiarlo el día que se
-    # confirme la versión del clúster.
+    # Se conserva igualmente porque no cuesta nada y sigue siendo la red por si un
+    # día el pod se ve apretado —una avalancha que se salte el borde, por ejemplo—.
+    # El umbral se queda en 70%: ahora el pod es UN solo contenedor, así que ya no
+    # hay una pasarela diluyendo la medida y el porcentaje significa lo que dice.
     - type: Resource
       resource:
         name: cpu

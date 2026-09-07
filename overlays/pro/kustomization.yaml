@@ -108,8 +108,8 @@ patches:
   # Estaban puestas «para 100.000 usuarios concurrentes», que era una previsión,
   # no una medición. Reservar es apartar: esos 5 CPU de las dos réplicas no los
   # podía usar nadie más, y con ellos el nodo figuraba al 53% de CPU reservada
-  # usando en realidad la tercera parte. Con el renderizado en servidor del
-  # escaparate, que sí consume CPU, ese sitio hace falta.
+  # usando en realidad la tercera parte, y ese sitio apartado no lo podía
+  # aprovechar nadie más del nodo.
   #
   # Y había una consecuencia peor, que es la que de verdad importa: el
   # autoescalado NO PODÍA DISPARARSE NUNCA. El HPA mide el uso como porcentaje de
@@ -140,34 +140,14 @@ patches:
       - op: replace
         path: /spec/replicas
         value: 2
-  # El frontend dejó de ser nginx sirviendo ficheros: ahora es React renderizándose
-  # en el servidor, un proceso de un solo hilo donde cada visita cuesta CPU. Con
-  # 256Mi/512Mi y sin reserva de CPU propia, cada página quedaba a expensas de que
-  # el planificador le diera turno detrás del backend.
-  #
-  # Se reserva 500m: el doble que preproducción, porque aquí sí hay tráfico real y
-  # porque es el valor sobre el que mide el autoescalado (el HPA compara el uso
-  # contra la RESERVA, no contra el límite). Sin límite de CPU, igual que el
-  # backend: un límite de CPU no ralentiza, estrangula en tramos de 100 ms.
-  #
-  # La MEMORIA se hereda de la base (384Mi/768Mi) en los tres entornos: lo que
-  # ocupa un renderizador no depende del entorno, depende de cuántas páginas pinta
-  # a la vez, y de eso se encarga el HPA subiendo réplicas.
-  #
-  # El parche va por NOMBRE de contenedor, no por índice: el pod tiene ahora dos
-  # (el renderizador y la pasarela) y un `containers/0` acertaría de casualidad.
-  - patch: |-
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: frontend
-      spec:
-        template:
-          spec:
-            containers:
-              - name: frontend
-                resources:
-                  requests: { cpu: 500m }
+  # El escaparate NO lleva reserva propia de CPU en ningún entorno, y eso es una
+  # VUELTA ATRÁS deliberada. Mientras se pintó en servidor hacía falta —cada visita
+  # costaba CPU en un proceso de un solo hilo—, pero Angular con `outputMode:
+  # static` escribe las páginas AL CONSTRUIR: aquí solo queda nginx abriendo un
+  # fichero ya comprimido y volcándolo al socket. Los 50m de la base sobran, y
+  # reservar 500m sería apartar en el nodo medio CPU por réplica que nadie usa —el
+  # mismo error que se corrigió en el backend y está contado unas líneas más
+  # arriba—.
 
   # Producción se desaloja la última si la máquina se queda sin memoria.
   - target: { kind: Deployment, name: backend }

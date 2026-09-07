@@ -10,39 +10,37 @@ metadata:
     # rangos de Cloudflare y rechazaría a todo el mundo, aplicación móvil
     # incluida. Se comprobó el 27-ago-2026 con la tienda entera devolviendo 403.
     #
-    # EL PASO AL RENDERIZADO EN SERVIDOR NO CAMBIA NADA AQUÍ. Sigue entrando todo
-    # por `/` al Service `frontend`, que sigue apuntando al puerto 3003. Lo único
-    # que cambia está DENTRO del pod: en el 3003 hay nginx, como antes, pero ahora
-    # reenvía el HTML a un proceso Node en vez de leerlo del disco. Ni el host, ni
-    # el puerto, ni el nombre del Service se mueven.
+    # EL ESCAPARATE ES ESTÁTICO, y aquí no cambia nada por ello. Sigue entrando
+    # todo por `/` al Service `frontend`, que sigue apuntando al puerto 3003. Lo
+    # único que cambia está DENTRO del pod: en el 3003 hay nginx, como siempre,
+    # pero ahora lee el HTML del disco —escrito al construir la imagen— en vez de
+    # pedírselo a un proceso Node. Ni el host, ni el puerto, ni el nombre del
+    # Service se mueven.
     #
     # TAMPOCO hace falta afinidad de sesión para el frontend, y conviene dejarlo
-    # escrito para que nadie la copie del backend: el renderizador NO guarda nada
-    # entre peticiones. Sus `loader` solo leen lo que trae la petición —la cookie
-    # de idioma/moneda/tema, los parámetros de la ruta—, y los datos de verdad los
-    # pide el navegador después de hidratar. Cualquier réplica sirve cualquier
-    # página, porque toda la entrada viaja en la propia petición.
+    # escrito para que nadie la copie del backend: aquí no se guarda nada entre
+    # peticiones. Cualquier réplica sirve cualquier página, porque son ficheros.
     #
-    # Lo que SÍ hace ese `loader` es que el HTML cambie de un visitante a otro (el
-    # idioma sale de la cookie). Por eso la regla de "el HTML no se cachea" del
-    # `nginx.conf` pasa de conveniente a obligatoria: una portada guardada en un
-    # borde le serviría el francés al siguiente que entrara.
+    # Y el HTML se sirve SIN cachear en el borde, con una excepción: la ficha de
+    # producto, que la compone `seo-ficha.js` en el momento de la petición y sí
+    # lleva su propio `s-maxage`. El resto del HTML lleva idioma y moneda de quien
+    # mira dentro, así que una portada guardada en un borde le serviría el francés
+    # al siguiente que entrara. La regla está en el `nginx.conf` de la imagen.
     #
-    # PENDIENTE, y NO se toca en este cambio (ver el informe): la cookie de
-    # afinidad `nx036_afinidad` que declara `base/backend/service.yaml` la reparte
-    # TRAEFIK, así que solo actúa cuando Traefik es quien balancea —o sea, en
+    # PENDIENTE, y NO se toca en este cambio: la cookie de afinidad
+    # `nx036_afinidad` que declara `base/backend/service.yaml` la reparte TRAEFIK,
+    # así que solo actúa cuando Traefik es quien balancea —o sea, en
     # api.nx036.com—. El acceso con Google del escaparate NO pasa por ahí: sale
-    # hacia `/oauth2/authorization/google` del MISMO origen (`src/api/client.ts`
-    # deja la base del API vacía), entra por este Ingress, lo recoge el nginx del
-    # pod y este llama a `http://backend:18082`, que es el ClusterIP — y ahí quien
-    # reparte es kube-proxy, al azar y sin cookie que valga. Con dos réplicas de
-    # backend, la petición de autorización puede guardarse en un pod y la vuelta
-    # de Google aterrizar en otro. El arreglo limpio es enrutar `/oauth2/` y
-    # `/login/oauth2/` a `backend` desde ESTE Ingress, para que los balancee
-    # Traefik con su cookie. Se deja fuera a propósito: es un cambio de
-    # comportamiento del inicio de sesión y no debe viajar mezclado con la
-    # migración a renderizado en servidor —si algo se rompe, hay que poder saber
-    # cuál de los dos fue—.
+    # hacia `/oauth2/authorization/google` del MISMO origen, entra por este
+    # Ingress, lo recoge el nginx del pod y este llama a `http://backend:18082`,
+    # que es el ClusterIP — y ahí quien reparte es kube-proxy, al azar y sin
+    # cookie que valga. Con dos réplicas de backend, la petición de autorización
+    # puede guardarse en un pod y la vuelta de Google aterrizar en otro. El arreglo
+    # limpio es enrutar `/oauth2/` y `/login/oauth2/` a `backend` desde ESTE
+    # Ingress, para que los balancee Traefik con su cookie. Se deja fuera a
+    # propósito: es un cambio de comportamiento del inicio de sesión y no debe
+    # viajar mezclado con el cambio de escaparate —si algo se rompe, hay que poder
+    # saber cuál de los dos fue—.
 spec:
   ingressClassName: traefik
   tls:
