@@ -60,6 +60,34 @@ Descartado y no repetir: la lista blanca con los rangos de Cloudflare (`ipAllowL
 sirve —Traefik ya ha traducido a la IP real del comprador, así que responde 403 a todo el mundo—, y los
 pull certificados con mTLS devolvían 520.
 
+### `RATELIMIT_BUILD_TOKEN` — pendiente de configurar en pre y producción
+
+El backend limita el escaparate público a **100 peticiones por minuto y por IP** (regla
+`storefront.web`): su defensa contra el volcado masivo del catálogo. Prerenderizar fichas del front es,
+visto desde ahí, exactamente eso —el compilador pide las fichas tan deprisa como puede—, así que en ese
+cupo solo caben unas **quince**. Medido: de 300 fichas, **278 se escribieron con una página de error
+dentro** y la compilación terminó en verde.
+
+Con el testigo, esas peticiones caen en la regla `build.prerender` (1.200/min). Lo que concede es un
+**cupo más alto, no la ausencia de límite**, y con tres cerrojos: solo si está configurado, solo para
+`GET`, y solo en los caminos del catálogo público. El día que se filtre, quien lo tenga podrá leer más
+deprisa; no vaciar la tienda ni tocar la autenticación.
+
+Dos pasos, y hacen falta LOS DOS con **el mismo valor**:
+
+1. **En la bóveda**, `RATELIMIT_BUILD_TOKEN=<valor>`, que llega al backend por `backend-secretos`.
+2. **En la compilación del front**, `NEXADROP_PRERENDER_TOKEN=<el mismo valor>` como argumento de
+   construcción de la imagen; viaja en la cabecera `X-Prerender-Token`.
+
+**Vacío = apagado**, que es el comportamiento anterior y lo correcto en cualquier entorno donde no se
+compile el front. Olvidarse de un paso **no rompe nada visible**: el build vuelve al cupo del escaparate
+y las fichas salen con página de error. Lo único que lo caza es la puerta `npm run verifica:prerender`,
+que corre dentro del Dockerfile. Si no se va a configurar, hay que bajar
+`NEXADROP_FICHAS_PRERENDERIZADAS` a 15.
+
+Genera el valor con `openssl rand -hex 32`. En local ya está puesto, en las dos claves, en
+`infra/docker/.env`.
+
 ## Cómo se despliega algo
 
 ```
