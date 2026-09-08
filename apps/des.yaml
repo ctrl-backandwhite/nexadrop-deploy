@@ -14,6 +14,24 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: nexadrop-des
+  # El NÚMERO DE RÉPLICAS de desarrollo no lo decide Git: lo decide el centinela, que apaga el entorno
+  # tras media hora sin tráfico y lo enciende cuando alguien entra (ver overlays/des/centinela.yaml).
+  #
+  # Sin esto no funcionaría NADA de aquello: con `selfHeal` puesto, en cuanto el centinela bajara a cero
+  # réplicas Argo las devolvería a una, y los dos se pasarían el día peleando —encendiendo y apagando el
+  # backend en bucle—, que es bastante peor que dejarlo encendido.
+  #
+  # Se ignora SOLO el recuento de réplicas y SOLO en desarrollo: cualquier otra diferencia respecto a
+  # Git se sigue corrigiendo sola, y preproducción y producción no llevan nada de esto.
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      name: frontend
+      jsonPointers: ["/spec/replicas"]
+    - group: apps
+      kind: Deployment
+      name: backend
+      jsonPointers: ["/spec/replicas"]
   syncPolicy:
     automated: { prune: true, selfHeal: true }
     syncOptions:

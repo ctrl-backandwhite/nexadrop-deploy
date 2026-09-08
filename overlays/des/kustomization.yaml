@@ -4,6 +4,9 @@ kind: Kustomization
 namespace: nexadrop-des
 resources:
   - ../../base
+  # Enciende desarrollo al usarse y lo apaga tras media hora sin tráfico. Solo aquí: en preproducción
+  # y producción un arranque en frío sería inaceptable. El porqué, largo, en el propio fichero.
+  - centinela.yaml
 
 images:
   - name: registry.nx036.com/nexadrop/backend
@@ -64,6 +67,13 @@ patches:
       - op: replace
         path: /spec/tls/0/hosts/0
         value: dev.nx036.com
+      # El dominio entra por el CENTINELA, no por el escaparate. Es lo que permite que el escaparate
+      # pueda estar a cero réplicas: si el Ingress apuntara directamente a él, una visita con el
+      # entorno apagado se encontraría un 503 de Traefik y nadie se enteraría de que hay que
+      # encenderlo. El centinela reenvía cuando está en pie y enciende cuando no.
+      - op: replace
+        path: /spec/rules/0/http/paths/0/backend/service/name
+        value: centinela
   - target: { kind: Ingress, name: backend }
     patch: |-
       - op: replace

@@ -1,0 +1,294 @@
+# ── Centinela de desarrollo: enciende al usarse, apaga al olvidarse ────────────────────────────────
+#
+# SOLO en desarrollo. Preproducción y producción no llevan nada de esto: ahí un arranque en frío sería
+# inaceptable.
+#
+# EL PROBLEMA QUE RESUELVE, medido el 8-sep-2026: el VPS tiene 18 núcleos y sostiene tres entornos
+# completos con carga media de 38-40. Cualquier petición —hasta un /actuator/health, que no hace nada—
+# tardaba entre 1 y 4 segundos, y un reinicio rodante del backend, más de siete minutos. Desarrollo
+# aporta a esa carga un backend Java consumiendo 363m de CPU y 1,5 GiB las veinticuatro horas, se use o
+# no. Apagarlo cuando nadie lo mira devuelve ese músculo a preproducción y producción.
+#
+# CÓMO FUNCIONA. El dominio de desarrollo deja de apuntar al escaparate y apunta aquí. Este proceso:
+#
+#   · reenvía al escaparate cuando está en pie, y no se nota que existe;
+#   · cuando está apagado, LEVANTA escaparate y backend y devuelve una página que se refresca sola,
+#     explicando que está arrancando;
+#   · apaga los dos tras media hora sin una sola petición.
+#
+# POR QUÉ NO KEDA. Es la herramienta estándar para esto, y aquí sería contraproducente: su operador,
+# su servidor de métricas y su interceptor son varios pods más en la máquina que precisamente estamos
+# intentando descargar. Esto son cien líneas y un pod de 30 MiB.
+#
+# EL GUION VIVE EN UN ConfigMap y no en una imagen propia a propósito: no hay nada que construir, ni
+# que publicar en el registro, ni una cadena de entrega más que mantener. Se lee aquí, en Git, que es
+# donde hay que poder leerlo.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: centinela
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: centinela
+rules:
+  # Lo MÍNIMO para lo que hace: leer cuántas réplicas hay y cambiarlas. Ni secretos, ni pods, ni otros
+  # namespaces. Si esta cuenta se viera comprometida, lo peor que se podría hacer con ella es apagar y
+  # encender desarrollo.
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments/scale"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: centinela
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: centinela
+subjects:
+  - kind: ServiceAccount
+    name: centinela
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: centinela
+  labels: { app.kubernetes.io/name: centinela }
+spec:
+  selector: { app.kubernetes.io/name: centinela }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: centinela-guion
+data:
+  centinela.js: |
+    /**
+     * Centinela de desarrollo: enciende al usarse, apaga al olvidarse.
+     *
+     * Ver la explicación larga en el manifiesto que lo monta. En resumen: hace de puerta del entorno de
+     * desarrollo para que su backend —363m de CPU y 1,5 GiB— no esté encendido las veinticuatro horas en
+     * una máquina que va al doble de su capacidad.
+     */
+    const http = require('node:http')
+    const fs = require('node:fs')
+
+    const NS = process.env.NAMESPACE
+    const OBJETIVOS = (process.env.OBJETIVOS || '').split(',').filter(Boolean)
+    /** Réplicas a las que se vuelve al despertar. Una por cada objetivo, en el mismo orden. */
+    const REPLICAS = (process.env.REPLICAS || '').split(',').map(Number)
+    const OCIOSO_MS = Number(process.env.MINUTOS_OCIOSO || 30) * 60_000
+    const DESTINO = process.env.DESTINO || 'frontend:80'
+
+    const API = 'https://kubernetes.default.svc'
+    // La CA del clúster NO se lee aquí: `fetch` no acepta un certificado por parámetro. Se confía en
+    // ella con NODE_EXTRA_CA_CERTS, que se pone en el manifiesto. Leerla y no usarla fue el primer
+    // intento, y fallaba con un «fetch failed» que no menciona el certificado por ninguna parte.
+    const TOKEN = fs.readFileSync('/var/run/secrets/kubernetes.io/serviceaccount/token', 'utf8')
+
+    /**
+     * Última vez que alguien pidió algo.
+     *
+     * Arranca AHORA y no en cero: si arrancara en cero, el primer repaso —al minuto de vida— vería media
+     * hora de inactividad y apagaría el entorno que alguien acaba de levantar.
+     */
+    let ultimoAcceso = Date.now()
+    let despertando = false
+
+    async function api(camino, opciones = {}) {
+      const respuesta = await fetch(`${API}${camino}`, {
+        ...opciones,
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          'Content-Type': opciones.contentType || 'application/json',
+          ...(opciones.headers || {}),
+        },
+        dispatcher: undefined,
+      })
+      if (!respuesta.ok) throw new Error(`${respuesta.status} ${await respuesta.text()}`)
+      return respuesta.json()
+    }
+
+    async function replicasListas(nombre) {
+      const d = await api(`/apis/apps/v1/namespaces/${NS}/deployments/${nombre}`)
+      return { deseadas: d.spec.replicas ?? 0, listas: d.status?.readyReplicas ?? 0 }
+    }
+
+    async function escala(nombre, cuantas) {
+      await api(`/apis/apps/v1/namespaces/${NS}/deployments/${nombre}/scale`, {
+        method: 'PATCH',
+        contentType: 'application/merge-patch+json',
+        body: JSON.stringify({ spec: { replicas: cuantas } }),
+      })
+      console.log(`[centinela] ${nombre} -> ${cuantas} réplicas`)
+    }
+
+    /** ¿Está el entorno en pie? Basta con que el DESTINO al que se reenvía tenga alguna réplica lista. */
+    async function enPie() {
+      try {
+        const { listas } = await replicasListas(OBJETIVOS[0])
+        return listas > 0
+      } catch (error) {
+        console.error('[centinela] no se ha podido consultar el estado:', error.message)
+        return false
+      }
+    }
+
+    async function despierta() {
+      if (despertando) return
+      despertando = true
+      try {
+        // Se levantan TODOS a la vez, no solo el escaparate: en cuanto alguien navega, el escaparate llama
+        // al backend, y despertarlo después alargaría la espera en vez de acortarla.
+        await Promise.all(OBJETIVOS.map((nombre, i) => escala(nombre, REPLICAS[i] || 1)))
+      } catch (error) {
+        console.error('[centinela] fallo al despertar:', error.message)
+      } finally {
+        despertando = false
+      }
+    }
+
+    async function duermeSiNadieMira() {
+      const ocioso = Date.now() - ultimoAcceso
+      if (ocioso < OCIOSO_MS) return
+      for (const nombre of OBJETIVOS) {
+        try {
+          const { deseadas } = await replicasListas(nombre)
+          if (deseadas > 0) await escala(nombre, 0)
+        } catch (error) {
+          console.error(`[centinela] fallo al apagar ${nombre}:`, error.message)
+        }
+      }
+    }
+
+    /** La página de espera. Se refresca sola para que quien llega no tenga que hacer nada. */
+    function paginaDeEspera() {
+      return `<!doctype html><html lang="es"><head><meta charset="utf-8">
+    <meta http-equiv="refresh" content="5"><title>Arrancando · NX036 desarrollo</title>
+    <style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0;
+    background:#f7f7f8;color:#27272a}div{max-width:32rem;text-align:center;padding:2rem}
+    h1{font-size:1.1rem;font-weight:600;margin:0 0 .75rem}p{margin:.4rem 0;font-size:.9rem;opacity:.75;
+    line-height:1.5}</style></head><body><div>
+    <h1>Levantando el entorno de desarrollo</h1>
+    <p>Estaba apagado para no consumir recursos. Esta página se actualiza sola.</p>
+    <p>Tarda un par de minutos: el backend arranca de cero y la máquina va cargada.</p>
+    </div></body></html>`
+    }
+
+    const servidor = http.createServer(async (peticion, respuesta) => {
+      // La sonda del propio centinela no cuenta como visita: si contara, el entorno no se apagaría nunca.
+      if (peticion.url === '/interno/centinela') {
+        respuesta.writeHead(200, { 'Content-Type': 'text/plain' })
+        return respuesta.end('ok\n')
+      }
+
+      ultimoAcceso = Date.now()
+
+      if (!(await enPie())) {
+        void despierta()
+        respuesta.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '5' })
+        return respuesta.end(paginaDeEspera())
+      }
+
+      const [host, puerto] = DESTINO.split(':')
+      const salida = http.request(
+        { host, port: Number(puerto), path: peticion.url, method: peticion.method, headers: peticion.headers },
+        (entrada) => {
+          respuesta.writeHead(entrada.statusCode || 502, entrada.headers)
+          entrada.pipe(respuesta)
+        },
+      )
+      // Si el escaparate se cae a media petición, se contesta la página de espera en vez de cortar: para
+      // quien está delante es lo mismo que si estuviera arrancando, y es lo que va a pasar a continuación.
+      salida.on('error', () => {
+        void despierta()
+        if (!respuesta.headersSent) {
+          respuesta.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Retry-After': '5' })
+        }
+        respuesta.end(paginaDeEspera())
+      })
+      peticion.pipe(salida)
+    })
+
+    setInterval(() => void duermeSiNadieMira(), 60_000)
+
+    servidor.listen(8080, () => {
+      console.log(
+        `[centinela] escuchando; objetivos=${OBJETIVOS.join(',')} destino=${DESTINO} ` +
+          `se apaga tras ${OCIOSO_MS / 60000} min sin tráfico`,
+      )
+    })
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: centinela
+  labels: { app.kubernetes.io/name: centinela }
+spec:
+  # UNA réplica y nunca más: es el reloj que decide cuándo apagar, y dos relojes con su propia cuenta
+  # de inactividad se contradirían —uno apagaría lo que el otro acaba de encender—.
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: centinela }
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: centinela }
+    spec:
+      serviceAccountName: centinela
+      # Desarrollo es lo primero que se desaloja si la máquina se queda sin memoria, y este pod también:
+      # si desaparece, el entorno se queda encendido, que es el lado inofensivo del fallo.
+      priorityClassName: nx036-desarrollo
+      containers:
+        - name: centinela
+          image: node:22-alpine
+          command: ["node", "/app/centinela.js"]
+          ports:
+            - { name: http, containerPort: 8080 }
+          env:
+            - name: NAMESPACE
+              valueFrom: { fieldRef: { fieldPath: metadata.namespace } }
+            # A quién enciende y apaga, y con cuántas réplicas vuelve cada uno.
+            # Sin esto, cualquier llamada a la API del clúster muere con «fetch failed»: Node no
+            # confía en la autoridad certificadora interna de Kubernetes.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            - { name: OBJETIVOS, value: "frontend,backend" }
+            - { name: REPLICAS, value: "1,1" }
+            - { name: DESTINO, value: "frontend:80" }
+            - { name: MINUTOS_OCIOSO, value: "30" }
+          readinessProbe:
+            httpGet: { path: /interno/centinela, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /interno/centinela, port: http }
+            periodSeconds: 30
+          resources:
+            # Reenviar bytes y mirar el reloj. Si esto costara caro, no tendría sentido: se estaría
+            # gastando en vigilar lo que se ahorra apagando.
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: guion, mountPath: /app, readOnly: true }
+            - { name: temporal, mountPath: /tmp }
+      volumes:
+        - name: guion
+          configMap: { name: centinela-guion }
+        - name: temporal
+          emptyDir: {}
