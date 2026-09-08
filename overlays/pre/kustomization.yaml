@@ -106,33 +106,37 @@ patches:
         path: /spec/template/spec/priorityClassName
         value: nx036-preproduccion
 
-  # Dimensionado para 50.000 concurrentes: la mitad que producción. Reserva menos
-  # de lo que puede usar, a propósito. Preproducción no tiene tráfico real salvo
-  # cuando se le lanza una prueba de carga; reservarle memoria las 24 horas se la
-  # quitaría a producción, que sí la necesita siempre.
+  # Preproducción NO atiende tráfico real: solo se usa para certificar y para las
+  # pruebas de carga que se le lanzan a mano. Lo que reserve las 24 horas se lo
+  # está quitando a producción, que sí lo necesita siempre.
+  #
+  # Ajustado el 8-sep-2026 con las tres máquinas midiendo carga 27-35 sobre 18
+  # núcleos, es decir, saturada de forma sostenida. El bloque anterior ya decía
+  # que 1500m de CPU sobraban —lo medido eran 330-350m— pero seguía pidiéndolos:
+  # el comentario se corrigió y el valor no. Dos réplicas por 1500m eran TRES
+  # núcleos apartados para consumir 0,7.
+  #
+  # Para una prueba de carga hay que volver a subir réplicas y reservas a mano;
+  # con estos números PRE certifica, pero no aguanta 50.000 concurrentes.
   - target: { kind: Deployment, name: backend }
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 2
-      # Ajustado a lo medido el 4-sep-2026: reservaba 1500m de CPU y 6 GB, y
-      # consumía 330-350m y entre 1,9 y 3,7 GB. Preproducción no atiende tráfico
-      # real, así que apartar millar y medio de CPU era quitárselo a producción
-      # para nada.
+        value: 1
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/memory
-        value: 6500Mi
+        value: 4Gi
       - op: replace
         path: /spec/template/spec/containers/0/resources/limits/memory
         value: 12500Mi
       - op: replace
         path: /spec/template/spec/containers/0/resources/requests/cpu
-        value: 1500m
+        value: 400m
   - target: { kind: Deployment, name: frontend }
     patch: |-
       - op: replace
         path: /spec/replicas
-        value: 2
+        value: 1
   # El escaparate volvió a ser nginx entregando ficheros: Angular con
   # `outputMode: static` escribe las páginas públicas AL CONSTRUIR la imagen. Ya no
   # hay renderizador que dimensionar, así que aquí no se toca ni CPU ni memoria; lo
