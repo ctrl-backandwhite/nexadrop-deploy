@@ -77,6 +77,11 @@ configMapGenerator:
       # sin control de versiones: una expresión cron no es un secreto, y ahí nadie
       # veía lo que estaba costando. OJO: el contenedor va en UTC.
       - "NEXADROP_CURRENCY_SYNC_CRON=0 30 4 * * *"     # a diario, 04:30 UTC
+      # Avisos push en la aplicación móvil. Se reparten con el servicio de Expo, así que el
+      # servidor no guarda las claves de firma de Apple ni de Google; lo único que necesita es
+      # poder salir a exp.host. Sin dispositivos registrados no manda nada, así que encenderlo
+      # antes de que haya app publicada no cuesta ni una llamada.
+      - "NEXADROP_PUSH_ENABLED=true"
 
 patches:
   - target: { kind: Ingress, name: frontend }
