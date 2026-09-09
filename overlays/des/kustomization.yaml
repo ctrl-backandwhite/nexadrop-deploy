@@ -12,7 +12,7 @@ images:
   - name: registry.nx036.com/nexadrop/backend
     newTag: sha-82d8cd552262679b16d490cc37dcf1d178ad3920
   - name: registry.nx036.com/nexadrop/frontend
-    newTag: des-sha-9a240fdaf2e032389005284c160072e8bd41d37e
+    newTag: des-sha-d3e4b11a4fbbf2b50677e02c89f97e1cdfba32f0
 
 configMapGenerator:
   - name: backend-config
