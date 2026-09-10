@@ -298,7 +298,7 @@ spec:
             - { name: DESTINO, value: "frontend:80" }
             - { name: MINUTOS_OCIOSO, value: "30" }
             # A "true" el entorno NO se enciende aunque alguien entre: se apaga hasta que se pida.
-            - { name: APAGADO_A_PROPOSITO, value: "false" }
+            - { name: APAGADO_A_PROPOSITO, value: "true" }
           readinessProbe:
             httpGet: { path: /interno/centinela, port: http }
             periodSeconds: 10
