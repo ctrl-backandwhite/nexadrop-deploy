@@ -86,6 +86,17 @@ data:
     /** Réplicas a las que se vuelve al despertar. Una por cada objetivo, en el mismo orden. */
     const REPLICAS = (process.env.REPLICAS || '').split(',').map(Number)
     const OCIOSO_MS = Number(process.env.MINUTOS_OCIOSO || 30) * 60_000
+    /**
+     * Apagado A PROPÓSITO: el entorno no se enciende aunque alguien entre.
+     *
+     * <p>El centinela existe para encender al usarse, y eso choca con «déjalo apagado hasta que lo
+     * pida»: basta una visita, un robot de búsqueda o una pestaña olvidada refrescándose para
+     * levantarlo otra vez. Con esto puesto sigue atendiendo el dominio —para poder decir que está
+     * apagado, en vez de un 503 crudo de Traefik que no explica nada— pero no toca las réplicas.
+     *
+     * <p>Se enciende poniéndolo a «false» en el manifiesto y esperando a que Argo sincronice.
+     */
+    const APAGADO_A_PROPOSITO = process.env.APAGADO_A_PROPOSITO === 'true'
     const DESTINO = process.env.DESTINO || 'frontend:80'
 
     const API = 'https://kubernetes.default.svc'
@@ -157,8 +168,10 @@ data:
     }
 
     async function duermeSiNadieMira() {
-      const ocioso = Date.now() - ultimoAcceso
-      if (ocioso < OCIOSO_MS) return
+      // Apagado a propósito: no se espera a la media hora de silencio. Sin esto, apagar el entorno
+      // tardaría treinta minutos en surtir efecto, y cualquiera que lo escalara a mano —o un
+      // despliegue de Argo— lo dejaría en pie hasta el siguiente repaso.
+      if (!APAGADO_A_PROPOSITO && Date.now() - ultimoAcceso < OCIOSO_MS) return
       for (const nombre of OBJETIVOS) {
         try {
           const { deseadas } = await replicasListas(nombre)
@@ -167,6 +180,18 @@ data:
           console.error(`[centinela] fallo al apagar ${nombre}:`, error.message)
         }
       }
+    }
+
+    /** Lo que se ve con el entorno apagado a propósito: dice qué pasa y NO se refresca sola. */
+    function paginaDeApagado() {
+      return `<!doctype html><html lang="es"><head><meta charset="utf-8">
+        <title>Desarrollo apagado</title>
+        <style>body{font-family:system-ui,sans-serif;background:#f4f6f9;color:#14212e;display:grid;
+        place-items:center;height:100vh;margin:0}div{text-align:center;max-width:32rem;padding:2rem}
+        h1{font-size:1.25rem;margin:0 0 .5rem}p{color:#5c6e7c;line-height:1.6;margin:0}</style>
+        </head><body><div><h1>Entorno de desarrollo apagado</h1>
+        <p>Est&aacute; apagado a prop&oacute;sito, no ca&iacute;do. Se enciende cuando se pida.</p>
+        </div></body></html>`
     }
 
     /** La página de espera. Se refresca sola para que quien llega no tenga que hacer nada. */
@@ -188,6 +213,11 @@ data:
       if (peticion.url === '/interno/centinela') {
         respuesta.writeHead(200, { 'Content-Type': 'text/plain' })
         return respuesta.end('ok\n')
+      }
+
+      if (APAGADO_A_PROPOSITO) {
+        respuesta.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8' })
+        return respuesta.end(paginaDeApagado())
       }
 
       ultimoAcceso = Date.now()
@@ -267,6 +297,8 @@ spec:
             - { name: REPLICAS, value: "1,1" }
             - { name: DESTINO, value: "frontend:80" }
             - { name: MINUTOS_OCIOSO, value: "30" }
+            # A "true" el entorno NO se enciende aunque alguien entre: se apaga hasta que se pida.
+            - { name: APAGADO_A_PROPOSITO, value: "false" }
           readinessProbe:
             httpGet: { path: /interno/centinela, port: http }
             periodSeconds: 10
