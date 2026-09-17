@@ -11,7 +11,7 @@ resources:
 # decisión, no un efecto secundario de fusionar a la rama principal.
 images:
   - name: registry.nx036.com/nexadrop/backend
-    newTag: sha-b4fcad50fccf4a66bd4f4ddeb83941e09f619003
+    newTag: sha-a0f285f933b5245a58854b9494441f8f986bba2c
   - name: registry.nx036.com/nexadrop/frontend
     newTag: pro-sha-a81e28d51a50962de29899d5e0709144f15ad1bd
 
