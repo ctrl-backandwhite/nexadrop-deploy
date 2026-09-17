@@ -61,7 +61,7 @@ dependería de que internet funcione para poder arrancar.
 
 Medido: 1,28 s para bajar una imagen del registro propio.
 
-## PENDIENTE Y SERIO: el origen es alcanzable saltándose Cloudflare
+## RESUELTO (17-sep-2026): el origen sigue siendo alcanzable, pero ya no sirve de nada
 
 **Comprobado el 27-ago-2026.** Con `--resolve` a la IP del VPS y la cabecera
 `Host`, el origen responde 200. Cualquiera que averigüe la IP —y se averigua:
@@ -84,8 +84,21 @@ tampoco pasa: devuelve 520**. Se revirtió para no dejar el servicio caído.
 Queda por averiguar si es propagación, si la CA descargada no es la que esta
 zona presenta, o si Traefik necesita el secreto de otra forma.
 
-**Mientras tanto, la mitigación que menos depende de todo esto:** que el backend
-NO se fíe de `CF-IPCountry` sin más. Si la petición no trae certificado de
-Cloudflare ni viene de sus rangos, esa cabecera hay que descartarla y resolver el
-país por otra vía. Es donde está el dinero, y se arregla en el código en lugar de
-en la red.
+**Lo que se hizo, y es lo que menos depende de todo esto:** que el backend NO se
+fíe de `CF-IPCountry` sin más. Cloudflare inyecta `X-Nexadrop-Edge` con un secreto
+compartido —una regla de transformación por entorno— y `GeolocalizacionDelCdn` solo
+se cree la geolocalización si esa cabecera llega y coincide, comparada en tiempo
+constante. Sin ella, el país se resuelve por otra vía o queda sin resolver.
+
+El origen SIGUE respondiendo si se le llama directo; lo que ya no se puede es
+elegir país, que era lo que costaba dinero. Comprobado el 17-sep-2026: con
+`--resolve` a la IP del VPS e inventando `CF-IPCountry: FR`, `/api/geo` devuelve
+`null`; y con `X-Nexadrop-Edge` falsificada, también. A través de Cloudflare
+resuelve bien en los tres entornos.
+
+Los otros tres riesgos de la lista de arriba —límite de peticiones, enlazado ajeno
+y el cortafuegos de aplicación— siguen abiertos: se saltan igual llamando al
+origen. No dependen de esto y hay que cerrarlos por otro lado.
+
+Detalle de las reglas y de los valores: la sección `CDN_SHARED_SECRET` del README
+de la raíz.

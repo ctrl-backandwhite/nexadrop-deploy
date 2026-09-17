@@ -51,7 +51,7 @@ la declaración.
 La única credencial que se crea a mano en el clúster es la del propio operador contra la bóveda:
 el huevo y la gallina inevitable, reducido a una sola pieza.
 
-### `CDN_SHARED_SECRET` — pendiente de configurar en pre y producción
+### `CDN_SHARED_SECRET` — CONFIGURADO en des, pre y producción (17-sep-2026)
 
 El backend solo se cree la geolocalización por IP —`CF-IPCountry` y equivalentes— cuando la petición
 demuestra haber pasado por el CDN, presentando este secreto en la cabecera `X-Nexadrop-Edge`.
@@ -61,11 +61,27 @@ correcto, saltándose Cloudflare por completo. Sin el secreto, esa cabecera es u
 declara del país que le convenga; el país decide el margen y los costes de aduana, y en el alta social
 decide el país que queda GRABADO en la ficha.
 
-Dos pasos, y hacen falta LOS DOS:
+Dos pasos, y hacen falta LOS DOS. **Ambos hechos el 17-sep-2026**:
 
-1. **En Cloudflare**, una regla de transformación de cabeceras de petición que añada
-   `X-Nexadrop-Edge: <valor>` a todo el tráfico del dominio.
+1. **En Cloudflare**, dos reglas de transformación de petición en la fase `http_request_late_transform`
+   de la zona `nx036.com`, una por entorno porque el valor es DISTINTO en cada uno:
+   - `(http.host eq "nx036.com") or (http.host eq "api.nx036.com")` → producción
+   - `(http.host eq "pre.nx036.com") or (http.host eq "api-pre.nx036.com")` → pre
+   - `(http.host eq "dev.nx036.com") or (http.host eq "api-dev.nx036.com")` → des
 2. **En la bóveda**, `CDN_SHARED_SECRET=<el mismo valor>`, que llega al backend por `backend-secretos`.
+
+**Los DOS dominios de cada entorno, no solo el de la API.** La tienda pide `/api/` a su PROPIO dominio
+—`apiBase: ''` en la configuración del front— y es el nginx del front quien hace de proxy al backend.
+Una regla solo sobre `api.` habría dejado sin cabecera todo el tráfico del escaparate, que es la
+mayoría. `api.` sigue haciendo falta aparte porque por ahí entran la aplicación móvil y los socios.
+
+**Al añadir una regla, van TODAS.** El `PUT` sobre
+`/rulesets/phases/http_request_late_transform/entrypoint` reemplaza el conjunto entero: mandar solo la
+nueva borra las demás sin avisar.
+
+Comprobado al aplicarlo: con Cloudflare delante, `/api/geo` resuelve país en los tres dominios;
+llamando al origen con `--resolve` e inventando `CF-IPCountry`, devuelve `null` — y también con la
+cabecera `X-Nexadrop-Edge` falsificada, que se compara en tiempo constante.
 
 **Vacío = se confía en la cabecera**, que es el comportamiento anterior. Es lo que necesita el
 desarrollo local, y es también la razón de que olvidarse del paso 2 no rompa nada de forma visible:
@@ -77,7 +93,36 @@ Descartado y no repetir: la lista blanca con los rangos de Cloudflare (`ipAllowL
 sirve —Traefik ya ha traducido a la IP real del comprador, así que responde 403 a todo el mundo—, y los
 pull certificados con mTLS devolvían 520.
 
-### `RATELIMIT_BUILD_TOKEN` — pendiente de configurar en pre y producción
+### `CAPTCHA_HMAC_KEY` — CONFIGURADO en des, pre y producción (17-sep-2026)
+
+Firma los retos del CAPTCHA (registro, contacto, restablecimiento y boletín). Sin clave, **cada réplica
+genera la suya**: el reto se firma en un pod y se verifica en otro, y esos cuatro formularios fallan de
+forma intermitente para una parte de la gente sin nada en el registro que lo explique. Con autoescalado
+de 2 a 6 réplicas en producción, eso es la mayoría de los intentos.
+
+Un valor por entorno, el mismo para todas sus réplicas: `openssl rand -hex 32`.
+
+En `des` no lo exige el validador —solo aborta con perfil `pro` o `pre`—, pero está puesto igual: sin
+él ese entorno seguiría creyéndose `CF-IPCountry` a pelo, y lo que se prueba en des tiene que
+comportarse como lo que se despliega.
+
+**Aborta el arranque si falta**, igual que `CDN_SHARED_SECRET`. Y esa es la historia de por qué se
+documenta aquí: al añadir esas dos comprobaciones al validador, el backend nuevo dejó de arrancar en
+pre y en producción. No se vio como un fallo —la cadena de CI en verde, la etiqueta escrita y la tienda
+respondiendo— porque `maxUnavailable: 0` mantiene sirviendo al pod anterior. PRE estuvo cuatro horas y
+media dándose por desplegado con la versión vieja, acumulando 30 reinicios. Antes de añadir una
+comprobación que falla cerrado al arrancar, hay que dejar su requisito puesto en cada entorno.
+
+### `RATELIMIT_BUILD_TOKEN` — puesto en la bóveda, pero NO casa con el de la CI
+
+**Comprobado el 17-sep-2026.** La clave existe con valor en `nexadrop-pre` y `nexadrop-pro` —y ambos
+entornos comparten el MISMO valor—, pero es distinto del `NEXADROP_PRERENDER_TOKEN` con el que la CI
+construye la imagen del front. O sea: el cupo alto NUNCA llega a aplicarse en esas construcciones.
+
+Hoy da igual, y por eso no se ha tocado: desde que la ficha exige cuenta no se prerenderiza ninguna
+(`NEXADROP_FICHAS_PRERENDERIZADAS=0` en el flujo de trabajo), así que la construcción hace pocas
+peticiones y le sobra con el cupo del escaparate. El día que se vuelvan a prerenderizar fichas hay que
+igualar los dos valores ANTES, o volverán a salir con una página de error dentro.
 
 El backend limita el escaparate público a **100 peticiones por minuto y por IP** (regla
 `storefront.web`): su defensa contra el volcado masivo del catálogo. Prerenderizar fichas del front es,
