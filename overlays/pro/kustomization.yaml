@@ -34,6 +34,15 @@ configMapGenerator:
       #
       # Con 1 hilo el histórico tarda más, pero es trabajo que a nadie le corre prisa; la respuesta al
       # comprador sí. VOLVER A 4 cuando `pendientes` llegue a 0 en el panel de productos.
+      #
+      # 18-sep-2026: ESTO YA NO ES EL FRENO, y conviene entender por qué antes de tocar el número. Lo
+      # descrito arriba —trabajo de fondo comiéndose la CPU de quien está comprando— se resolvió
+      # sacando el espejado a su propio despliegue (`backend-espejado`, en base/). La tienda ya no
+      # espeja: el ajuste de abajo no gobierna nada mientras STORAGE_MIRROR_ENABLED esté en false.
+      #
+      # El ritmo del espejado se ajusta ahora en el worker, con STORAGE_DESCARGAS_POR_ORIGEN,
+      # y ahí subirlo NO le quita CPU al comprador. Ese es justo el sentido del cambio.
+      - STORAGE_MIRROR_ENABLED=false
       - STORAGE_MIRROR_CONCURRENCY=1
       - STORAGE_MIRROR_BATCH=10
       - DB_HOST=172.17.0.1

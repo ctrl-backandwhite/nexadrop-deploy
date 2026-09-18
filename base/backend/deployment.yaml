@@ -10,6 +10,13 @@ spec:
   # El pod nuevo tiene que aguantar 30 s sano ANTES de contar como bueno. Sin
   # esto, uno que pasa la sonda y se cae medio segundo después cuenta igual, y el
   # despliegue sigue bajando los viejos: acabas sin ninguno en pie.
+  # Kubernetes guarda DIEZ ReplicaSets viejos por Deployment si nadie dice otra
+  # cosa, y cada despliegue añade uno más que ya no levanta ningún pod. El
+  # 18-sep-2026 había veintiséis en desarrollo y veinte en cada uno de los otros
+  # dos entornos. No gastan CPU ni memoria, pero engordan el estado del clúster y
+  # esconden lo que sí está vivo cuando hace falta mirar. Tres bastan para poder
+  # volver atrás un par de versiones, que es para lo único que sirven.
+  revisionHistoryLimit: 3
   minReadySeconds: 30
   # Si a los 10 minutos el despliegue no ha terminado, se marca como fallido en
   # lugar de quedarse intentándolo en silencio para siempre.

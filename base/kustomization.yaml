@@ -8,6 +8,8 @@ resources:
   - backend/service.yaml
   - backend/ingress.yaml
   - backend/servicemonitor.yaml
+  # El espejado de imágenes, en su propio proceso y en los tres entornos.
+  - backend-espejado/deployment.yaml
   - frontend/deployment.yaml
   - frontend/service.yaml
   - frontend/ingress.yaml
