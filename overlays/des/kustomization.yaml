@@ -83,6 +83,8 @@ patches:
             containers:
               - name: backend
                 env:
+                  - name: STORAGE_MIRROR_CONCURRENCY
+                    value: "2"
                   - name: STORAGE_DESCARGAS_POR_ORIGEN
                     value: "2"
                 resources:

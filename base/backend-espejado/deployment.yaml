@@ -59,9 +59,31 @@ spec:
             - { name: DB_USER, value: nexadrop }
             # ESTE es el que espeja. En la tienda va a false.
             - { name: STORAGE_MIRROR_ENABLED, value: "true" }
-            # Descargas simultáneas POR PROVEEDOR. El límite real no es nuestra máquina —se midió el
-            # nodo al 16% de CPU mientras el espejado iba a 4.200 imágenes/hora—, es 1688.
-            - { name: STORAGE_DESCARGAS_POR_ORIGEN, value: "6" }
+            # EL WORKER NO MIGRA LA BASE. De eso se encarga la tienda, y solo ella.
+            #
+            # Los dos arrancaban ejecutando Liquibase y competían por el mismo cerrojo: el que llegaba
+            # segundo se quedaba esperando («Waiting for changelog lock...») hasta que la sonda de
+            # arranque lo mataba. Se vio en desarrollo el 18-sep-2026, con el worker muriendo en bucle
+            # por exit 137 mientras esperaba un cerrojo que además llevaba cogido desde el 9-sep por un
+            # pod que ya no existía.
+            #
+            # Con un solo migrador se acaba la carrera. Y el orden correcto sale gratis: la tienda es
+            # quien tiene la sonda de arranque larga y quien debe estar al día del esquema antes de
+            # atender a nadie; el worker solo lee y escribe filas que ya existen.
+            - { name: SPRING_LIQUIBASE_ENABLED, value: "false" }
+            # HILOS DE DESCARGA. Se declara aquí, y no se hereda del ConfigMap, porque ese valor lo
+            # comparten la tienda y este proceso: en la tienda estaba bajado a mano para que comprimir
+            # no le robara CPU a los compradores, y esa razón aquí ya no existe.
+            #
+            # Y era el cuello de verdad: con 4 hilos, el techo de 6 descargas por proveedor no se
+            # alcanzaba nunca. Medido el 18-sep-2026 con 4 hilos: 977m de CPU y 1,7Gi en el pod, con el
+            # nodo al 19%. Queda sitio.
+            - { name: STORAGE_MIRROR_CONCURRENCY, value: "8" }
+            # Descargas simultáneas POR PROVEEDOR, que es el techo que de verdad importa: el límite no
+            # es nuestra máquina, es 1688 —responde 403 a quien enlaza desde fuera y corta a quien
+            # insiste—. Se sube a la par que los hilos para que uno no anule al otro, pero sin pasarse:
+            # lo que ve el proveedor es la SUMA de los tres entornos.
+            - { name: STORAGE_DESCARGAS_POR_ORIGEN, value: "8" }
             # La compresión va en segunda pasada y sin prisa: la foto ya se ve.
             - { name: STORAGE_COMPRESION_BATCH, value: "10" }
           envFrom:
