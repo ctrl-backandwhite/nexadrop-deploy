@@ -40,8 +40,22 @@ configMapGenerator:
       # procesar (asi una imagen que mate el proceso deja de volver eternamente) y una imagen
       # que ya fallo se espeja SIN comprimir. Peor caso: una foto pesa de mas, en vez de las
       # replicas cayendo en bucle. Ademas webp-imageio pasa de 0.9.0 a 0.11.0.
+      #
+      # 18-sep-2026: de 1 a 4. El =1 se quedo de resto de aquella tarde y no fue lo que freno la
+      # caida —la nota de arriba lo dice: la JVM murio CON UN SOLO HILO, por libwebp 0.9.0, y se
+      # arreglo apagando el espejado, no bajando este numero—. Hoy libwebp va por 0.11.0, el intento
+      # se anota ANTES de procesar y lo que ya fallo se espeja sin comprimir.
+      #
+      # Lo que costaba tenerlo en 1, medido en PRE tras cargar 9.425 productos: 84.097 muestras de
+      # color sin espejar avanzando a ~510/hora, casi SIETE DIAS con las fichas enseñando el hueco
+      # (el proveedor responde 403 a quien enlaza sus imagenes desde otra web). Y no por falta de
+      # maquina: el nodo al 16% de CPU y el pod sin limite de CPU, con 6,4 Gi de 12,5 en memoria.
+      # El coste es espera de red, que es lo que se paraleliza bien.
+      #
+      # Se sube SOLO este numero y de golpe a 4 —el valor con el que estuvo corriendo meses— para
+      # que, si algo se tuerce, se sepa exactamente que lo torcio. Si aguanta, se puede subir mas.
       - STORAGE_MIRROR_ENABLED=true
-      - STORAGE_MIRROR_CONCURRENCY=1
+      - STORAGE_MIRROR_CONCURRENCY=4
       - STORAGE_MIRROR_BATCH=25
       # 172.17.0.1 es la interfaz interna de Docker: donde escuchan los servicios
       # con dato, que viven en Compose sobre el host y no en el clúster.
