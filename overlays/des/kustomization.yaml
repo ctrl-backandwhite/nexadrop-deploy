@@ -64,6 +64,30 @@ configMapGenerator:
       - "NEXADROP_CURRENCY_SYNC_CRON=0 0 5 * * MON"    # lunes, 05:00 UTC
 
 patches:
+  # El espejado de DESARROLLO va al ralentí, por dos motivos. Es la máquina más pequeña y aquí no
+  # compra nadie; pero sobre todo, el techo que ve el proveedor es la SUMA de los tres entornos
+  # pidiéndole fotos a la vez, y 1688 corta a quien insiste.
+  #
+  # La memoria NO se recorta por debajo de 2Gi: con 1Gi el proceso moría por OOM durante las
+  # migraciones de Liquibase. Arrancar cuesta lo mismo en todas partes aunque luego el catálogo sea
+  # pequeño; lo que se ajusta es el ritmo, no el arranque.
+  - target: { kind: Deployment, name: backend-espejado }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend-espejado
+      spec:
+        template:
+          spec:
+            containers:
+              - name: backend
+                env:
+                  - name: STORAGE_DESCARGAS_POR_ORIGEN
+                    value: "2"
+                resources:
+                  requests: { cpu: 100m, memory: 512Mi }
+                  limits: { memory: 2Gi }
   - target: { kind: Ingress, name: frontend }
     patch: |-
       - op: replace

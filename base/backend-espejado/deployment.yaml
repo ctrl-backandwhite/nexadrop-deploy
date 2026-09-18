@@ -88,8 +88,17 @@ spec:
             # a quien sí la necesita. El pico de memoria es concurrencia x ~40 MB por imagen: el
             # compresor decodifica saltando píxeles, así que cada una queda acotada ahí por grande que
             # sea el original.
+            #
+            # El LÍMITE se subió de 2Gi a 3Gi el 18-sep-2026, tras ver morir el worker con OOMKilled
+            # en preproducción mientras Liquibase aplicaba la migración v162. El error de cálculo fue
+            # pensar que este proceso «solo espeja»: arranca la aplicación entera, con su contexto de
+            # Spring y sus 171 migraciones, y eso pesa lo mismo aquí que en la tienda.
+            #
+            # Se sube el techo y NO la reserva: un límite no aparta memoria del nodo, solo dice hasta
+            # dónde puede llegar el proceso antes de que lo maten. La reserva sigue siendo modesta
+            # porque lo que este proceso hace de verdad es esperar red.
             requests: { cpu: 200m, memory: 768Mi }
-            limits: { memory: 2Gi }
+            limits: { memory: 3Gi }
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001
