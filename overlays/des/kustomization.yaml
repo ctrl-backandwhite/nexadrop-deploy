@@ -23,6 +23,11 @@ configMapGenerator:
       # decodifica saltando píxeles, así que cada imagen queda acotada en unos 40 MB por grande que
       # sea el original; el pico del espejado es por tanto CONCURRENCY x 40 MB.
       # 2Gi de límite, heap ~1,4 GB: 2 hilos son ~80 MB de pico, holgado para la máquina más pequeña.
+      # 18-sep-2026: la tienda ya no espeja. Lo hace `backend-espejado` (base/), su propio despliegue,
+      # para que comprimir deje de competir por CPU con quien navega y para que un SIGSEGV del
+      # codificador WebP nativo —que no se puede capturar— tumbe a un trabajador reponible y no al
+      # escaparate. Los dos ajustes de abajo no gobiernan nada mientras esto esté en false.
+      - STORAGE_MIRROR_ENABLED=false
       - STORAGE_MIRROR_CONCURRENCY=2
       - STORAGE_MIRROR_BATCH=10
       - DB_HOST=172.17.0.1

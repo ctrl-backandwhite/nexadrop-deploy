@@ -54,7 +54,11 @@ configMapGenerator:
       #
       # Se sube SOLO este numero y de golpe a 4 —el valor con el que estuvo corriendo meses— para
       # que, si algo se tuerce, se sepa exactamente que lo torcio. Si aguanta, se puede subir mas.
-      - STORAGE_MIRROR_ENABLED=true
+      # APAGADO EN LA TIENDA: ahora espeja el despliegue `backend-espejado` (base/backend-espejado/), que corre
+      # el mismo programa con este mismo ajuste en `true`. Así comprimir deja de competir por CPU con
+      # quien está comprando, y un SIGSEGV del codificador WebP nativo —que no se puede capturar y se
+      # llevó la JVM entera el 5-sep-2026— tumba a un trabajador reponible en vez de al escaparate.
+      - STORAGE_MIRROR_ENABLED=false
       - STORAGE_MIRROR_CONCURRENCY=4
       - STORAGE_MIRROR_BATCH=25
       # 172.17.0.1 es la interfaz interna de Docker: donde escuchan los servicios
@@ -112,6 +116,34 @@ patches:
       - op: replace
         path: /spec/tls/0/hosts/0
         value: api-pre.nx036.com
+
+  # CABECERAS DE OBJETO COMPACTAS (JEP 519, producto desde Java 25).
+  #
+  # Cada objeto del montón lleva una cabecera. Comprimirla de 128 a 64 bits no cambia una línea de
+  # código y, según las medidas del propio JEP sobre SPECjbb2015, son un 22% menos de montón, un 8%
+  # menos de CPU y un 15% menos de trabajo para el recolector con G1.
+  #
+  # Aquí importa más que en un servicio cualquiera: el backend pide 4 Gi y tiene tope de 12,5 Gi,
+  # y el espejado de imágenes trabaja con mapas de bits descomprimidos, que son objetos grandes y
+  # numerosos.
+  #
+  # Se prueba PRIMERO en preproducción, a propósito: `base/` lo heredarían los tres entornos a la vez
+  # —producción incluida— en cuanto Argo sincronizara, y un ajuste de máquina virtual se mide antes
+  # de darlo por bueno. Cuando PRE lo confirme, se sube a `base/backend/deployment.yaml`.
+  - target: { kind: Deployment, name: backend }
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: backend
+      spec:
+        template:
+          spec:
+            containers:
+              - name: backend
+                env:
+                  - name: JAVA_TOOL_OPTIONS
+                    value: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -XX:+UseCompactObjectHeaders"
 
   # Preproducción cede antes que producción, pero después que desarrollo.
   - target: { kind: Deployment, name: backend }

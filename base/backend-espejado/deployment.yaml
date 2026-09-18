@@ -1,0 +1,103 @@
+# EL ESPEJADO DE IMÁGENES, FUERA DEL BACKEND QUE ATIENDE COMPRADORES.
+#
+# Por qué existe este despliegue aparte. Espejar consiste en bajar la foto del proveedor, comprimirla
+# y guardarla. Dos de esas tres cosas son un mal vecino para una tienda:
+#
+#   1. Comprimir consume CPU y memoria de verdad —decodificar un JPEG grande ocupa ancho x alto x 4
+#      bytes— y compite con las peticiones de quien está comprando.
+#   2. El codificador WebP es código NATIVO. Un SIGSEGV suyo no se puede capturar: se lleva la máquina
+#      virtual entera. El 5-sep-2026 pasó exactamente eso y dejó las dos réplicas de preproducción
+#      cayendo en bucle, con el escaparate sin servir.
+#
+# Separándolo, el peor caso deja de ser «se cae la tienda» y pasa a ser «se cae un trabajador y
+# Kubernetes lo levanta». La tienda ni se entera.
+#
+# NO lleva Service, y es a propósito: este pod no atiende a nadie, solo drena colas. Su etiqueta es
+# distinta de la del backend para que el Service de la tienda no le mande tráfico por error.
+#
+# Va en base/, así que existe en los TRES entornos. Tiene que ser así: si solo estuviera en uno, los
+# otros dos se quedarían sin espejar nada en cuanto su backend deja de hacerlo —y una imagen sin
+# espejar es una imagen rota, porque el proveedor responde 403 a quien la enlaza desde fuera—. Lo que
+# cada entorno ajusta por su cuenta es el RITMO (descargas por proveedor y tamaño de lote), no si
+# existe o no.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-espejado
+  labels: { app.kubernetes.io/name: backend-espejado }
+spec:
+  # Una sola. El techo que ve el proveedor es réplicas x descargas-por-origen, así que este número no
+  # se sube sin ajustar el otro: 1688 limita por tasa y corta a quien insiste.
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: backend-espejado }
+  revisionHistoryLimit: 3
+  progressDeadlineSeconds: 600
+  strategy:
+    type: Recreate   # No hay tráfico que preservar; y dos a la vez doblarían la carga al proveedor.
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: backend-espejado }
+    spec:
+      imagePullSecrets:
+        - name: harbor
+      containers:
+        - name: backend
+          # LA MISMA IMAGEN que la tienda: no es otro programa, es el mismo con otro trabajo. Así no
+          # hay un segundo artefacto que construir, versionar ni mantener al día. El tag lo reescribe
+          # el mismo parche de kustomize que el del backend.
+          image: registry.nx036.com/nexadrop/backend:sha-por-definir
+          ports:
+            - { name: http, containerPort: 18082 }
+          env:
+            # Cabeceras de objeto compactas: 22% menos de montón según el JEP 519. Aquí importa más
+            # que en la tienda, porque este proceso trabaja con mapas de bits descomprimidos.
+            - name: JAVA_TOOL_OPTIONS
+              value: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -XX:+UseCompactObjectHeaders"
+            - { name: SERVER_PORT, value: "18082" }
+            - { name: DB_NAME, value: nexadrop }
+            - { name: DB_USER, value: nexadrop }
+            # ESTE es el que espeja. En la tienda va a false.
+            - { name: STORAGE_MIRROR_ENABLED, value: "true" }
+            # Descargas simultáneas POR PROVEEDOR. El límite real no es nuestra máquina —se midió el
+            # nodo al 16% de CPU mientras el espejado iba a 4.200 imágenes/hora—, es 1688.
+            - { name: STORAGE_DESCARGAS_POR_ORIGEN, value: "6" }
+            # La compresión va en segunda pasada y sin prisa: la foto ya se ve.
+            - { name: STORAGE_COMPRESION_BATCH, value: "10" }
+          envFrom:
+            - configMapRef: { name: backend-config }
+            - secretRef: { name: backend-secretos }
+          startupProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 10
+            failureThreshold: 60
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 20
+            failureThreshold: 3
+            timeoutSeconds: 5
+          # Sin readinessProbe: nadie le manda tráfico, así que «listo para recibir» no significa nada
+          # aquí. La de arranque y la de vida sí, para que Liquibase termine y para reponerlo si muere.
+          resources:
+            # Reserva DELIBERADAMENTE modesta. Este despliegue añade un pod en cada uno de los tres
+            # entornos, y la máquina ya iba justa: el 8-sep-2026 se midió carga 27-35 sobre 18 núcleos,
+            # saturada de forma sostenida, y hubo que bajar reservas del backend por eso mismo.
+            #
+            # Y lo que hace este proceso es sobre todo ESPERAR RED. Reservar CPU que no usa se la quita
+            # a quien sí la necesita. El pico de memoria es concurrencia x ~40 MB por imagen: el
+            # compresor decodifica saltando píxeles, así que cada una queda acotada ahí por grande que
+            # sea el original.
+            requests: { cpu: 200m, memory: 768Mi }
+            limits: { memory: 2Gi }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: temporal, mountPath: /tmp }
+      volumes:
+        - name: temporal
+          emptyDir: {}
