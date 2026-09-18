@@ -78,7 +78,7 @@ spec:
             # Y era el cuello de verdad: con 4 hilos, el techo de 6 descargas por proveedor no se
             # alcanzaba nunca. Medido el 18-sep-2026 con 4 hilos: 977m de CPU y 1,7Gi en el pod, con el
             # nodo al 19%. Queda sitio.
-            - { name: STORAGE_MIRROR_CONCURRENCY, value: "8" }
+            - { name: STORAGE_MIRROR_CONCURRENCY, value: "12" }
             # Descargas simultáneas POR PROVEEDOR, que es el techo que de verdad importa: el límite no
             # es nuestra máquina, es 1688 —responde 403 a quien enlaza desde fuera y corta a quien
             # insiste—. Se sube a la par que los hilos para que uno no anule al otro, pero sin pasarse:
@@ -119,8 +119,17 @@ spec:
             # Se sube el techo y NO la reserva: un límite no aparta memoria del nodo, solo dice hasta
             # dónde puede llegar el proceso antes de que lo maten. La reserva sigue siendo modesta
             # porque lo que este proceso hace de verdad es esperar red.
+            #
+            # 18-sep-2026, segunda subida: 3Gi -> 4Gi al pasar a 12 hilos. El pico de memoria del
+            # espejado es hilos x ~40 MB de mapa de bits descomprimido, así que 12 hilos son ~480 MB
+            # de picos sobre lo que ya ocupa la aplicación (1,7Gi medidos con 4 hilos).
+            #
+            # Subir hilos por encima del techo de descargas por proveedor NO es un descuido: desde que
+            # la memoria de URLs cubre también las variantes, buena parte de las tareas se resuelven
+            # contra la base sin tocar la red y sin pedir turno al proveedor. Los hilos de más sirven
+            # para despachar esos aciertos deprisa; los que sí descargan siguen limitados a 8.
             requests: { cpu: 200m, memory: 768Mi }
-            limits: { memory: 3Gi }
+            limits: { memory: 4Gi }
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001
