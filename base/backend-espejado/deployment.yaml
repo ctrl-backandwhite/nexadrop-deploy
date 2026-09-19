@@ -53,7 +53,12 @@ spec:
             # Cabeceras de objeto compactas: 22% menos de montón según el JEP 519. Aquí importa más
             # que en la tienda, porque este proceso trabaja con mapas de bits descomprimidos.
             - name: JAVA_TOOL_OPTIONS
-              value: "-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError -XX:+UseCompactObjectHeaders"
+              value: >-
+                -XX:MaxRAMPercentage=70
+                -XX:+ExitOnOutOfMemoryError
+                -XX:+UseCompactObjectHeaders
+                -XX:G1PeriodicGCInterval=120000
+                -XX:+G1PeriodicGCInvokesConcurrent
             - { name: SERVER_PORT, value: "18082" }
             - { name: DB_NAME, value: nexadrop }
             - { name: DB_USER, value: nexadrop }
@@ -120,16 +125,25 @@ spec:
             # dónde puede llegar el proceso antes de que lo maten. La reserva sigue siendo modesta
             # porque lo que este proceso hace de verdad es esperar red.
             #
-            # 18-sep-2026, segunda subida: 3Gi -> 4Gi al pasar a 12 hilos. El pico de memoria del
-            # espejado es hilos x ~40 MB de mapa de bits descomprimido, así que 12 hilos son ~480 MB
-            # de picos sobre lo que ya ocupa la aplicación (1,7Gi medidos con 4 hilos).
+            # 18-sep-2026, segunda subida: 3Gi -> 4Gi al pasar a 12 hilos. Y 19-sep, tercera: 4Gi ->
+            # 6Gi, porque con 4Gi murió igualmente por OOM.
+            #
+            # El cálculo de «hilos x ~40 MB» se quedó corto, y conviene saber por qué: esos 40 MB son
+            # el caso acotado del compresor, que decodifica saltando píxeles. Pero el pico real lo
+            # marca la imagen MÁS GRANDE que coincida en vuelo, y una foto de 4000x4000 son 64 MB de
+            # mapa de bits ella sola. Doce de esas a la vez no caben en 4Gi junto al resto.
+            #
+            # Un límite de memoria en Kubernetes es un TECHO DURO: cuando el proceso lo toca, el kernel
+            # lo mata en ese instante. No hay ampliación sobre la marcha ni sirve liberar después,
+            # porque el pico mata antes. Lo único que se puede hacer es dejar sitio para el pico —esto—
+            # y devolver memoria cuando no se usa —el GC periódico de abajo—.
             #
             # Subir hilos por encima del techo de descargas por proveedor NO es un descuido: desde que
             # la memoria de URLs cubre también las variantes, buena parte de las tareas se resuelven
             # contra la base sin tocar la red y sin pedir turno al proveedor. Los hilos de más sirven
             # para despachar esos aciertos deprisa; los que sí descargan siguen limitados a 8.
             requests: { cpu: 200m, memory: 768Mi }
-            limits: { memory: 4Gi }
+            limits: { memory: 6Gi }
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001
